@@ -57,7 +57,8 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins("http://localhost:5173", "http://localhost:3000", "http://localhost:4200")
+        policy.WithOrigins( "http://localhost:5173", "http://localhost:3000", "http://localhost:4200", "https://poll.gauravpatil.space", 
+		"https://poll.gryphonacademy.co.in", "https://live-poll-one.vercel.app")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -90,6 +91,13 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.Migrate();
 }
+
+app.MapGet("/", () => Results.Ok(new
+{
+    status = "LivePoll API Running",
+    environment = app.Environment.EnvironmentName,
+    timestamp = DateTime.UtcNow
+}));
 
 app.Run();
 
