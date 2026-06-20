@@ -106,29 +106,15 @@ public class VoteService : IVoteService
                     VotedAt = DateTime.UtcNow
                 });
 
-                // Upsert vote count
-                var voteCount = await _db.VoteCounts
-                    .FirstOrDefaultAsync(vc =>
-                        vc.PollId == pollId &&
-                        vc.QuestionIndex == request.QuestionIndex &&
-                        vc.OptionIndex == request.OptionIndex.Value);
-
-                if (voteCount != null)
-                {
-                    voteCount.Count++;
-                }
-                else
-                {
-                    _db.VoteCounts.Add(new VoteCount
-                    {
-                        PollId = pollId,
-                        QuestionIndex = request.QuestionIndex,
-                        OptionIndex = request.OptionIndex.Value,
-                        Count = 1
-                    });
-                }
-
                 await _db.SaveChangesAsync();
+
+                // Atomic Upsert vote count in DB to avoid lock-upgrade deadlocks under high concurrency
+                await _db.Database.ExecuteSqlInterpolatedAsync(
+                    $@"INSERT INTO ""VoteCounts"" (""PollId"", ""QuestionIndex"", ""OptionIndex"", ""Count"")
+                      VALUES ({pollId}, {request.QuestionIndex}, {request.OptionIndex.Value}, 1)
+                      ON CONFLICT (""PollId"", ""QuestionIndex"", ""OptionIndex"")
+                      DO UPDATE SET ""Count"" = ""VoteCounts"".""Count"" + 1");
+
                 await transaction.CommitAsync();
 
                 // Broadcast updated vote counts to all poll listeners (Only for MultipleChoice; WordCloud broadcasts via background Timer)

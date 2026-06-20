@@ -48,15 +48,7 @@ public class WordCloudManager : IHostedService, IDisposable
     // Bounded channel to decouple tick broadcasts from slow database flushes
     private readonly Channel<SavePayload> _saveChannel;
 
-    private readonly HashSet<string> _stopWords = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "the", "a", "an", "and", "or", "is", "it", "in", "of", "to", "for", "on", "at", "with", "this", "that", "was", "be", "are", 
-        "i", "you", "we", "they", "he", "she", "not", "but", "by", "from", "as", "have", "has", "had", "do", "did", "been", "will", 
-        "my", "your", "our", "can", "so", "if", "up", "out", "about", "who", "get", "which", "go", "me", "when", "make", "can", "like", 
-        "time", "just", "him", "know", "take", "people", "into", "year", "your", "good", "some", "could", "them", "see", "other", 
-        "than", "then", "now", "look", "only", "come", "its", "over", "think", "also", "back", "after", "use", "two", "how", "our", 
-        "work", "first", "well", "way", "even", "new", "want", "because", "any", "these", "give", "day", "most", "us"
-    };
+
 
     private CancellationTokenSource? _cts;
     private Task? _tickTask;
@@ -217,7 +209,7 @@ public class WordCloudManager : IHostedService, IDisposable
     }
 
     /// <summary>
-    /// Sanitizes raw user input: converts to lowercase, removes punctuation, filters out stop words.
+    /// Sanitizes raw user input: converts to lowercase and removes punctuation.
     /// </summary>
     public List<string> SanitizeText(string input)
     {
@@ -245,7 +237,7 @@ public class WordCloudManager : IHostedService, IDisposable
         foreach (var token in tokens)
         {
             var word = token.Trim();
-            if (word.Length > 0 && !_stopWords.Contains(word))
+            if (word.Length > 0)
             {
                 result.Add(word);
             }
