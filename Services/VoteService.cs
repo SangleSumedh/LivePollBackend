@@ -5,6 +5,7 @@ using live_poll_backend.Exceptions;
 using live_poll_backend.Hubs;
 using live_poll_backend.Models.DTOs;
 using live_poll_backend.Models.Entities;
+using live_poll_backend.Models.Enums;
 
 namespace live_poll_backend.Services;
 
