@@ -14,6 +14,7 @@ public class AppDbContext : DbContext
     public DbSet<VoteCount> VoteCounts => Set<VoteCount>();
     public DbSet<Vote> Votes => Set<Vote>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<WordCloudCount> WordCloudCounts => Set<WordCloudCount>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -45,6 +46,10 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Text).IsRequired().HasMaxLength(1000);
             entity.Property(e => e.Index).IsRequired();
+            entity.Property(e => e.Type)
+                .HasConversion<string>()
+                .HasMaxLength(20)
+                .HasDefaultValue(QuestionType.MultipleChoice);
 
             entity.HasOne(e => e.Poll)
                 .WithMany(p => p.Questions)
@@ -85,12 +90,28 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.SessionId).IsRequired().HasMaxLength(200);
             entity.Property(e => e.VotedAt).HasDefaultValueSql("NOW()");
+            entity.Property(e => e.OptionIndex).IsRequired(false);
 
             // One vote per session per question per poll
             entity.HasIndex(e => new { e.PollId, e.QuestionIndex, e.SessionId }).IsUnique();
 
             entity.HasOne(e => e.Poll)
                 .WithMany(p => p.Votes)
+                .HasForeignKey(e => e.PollId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── WordCloudCount ──
+        modelBuilder.Entity<WordCloudCount>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Word).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Count).HasDefaultValue(0);
+
+            entity.HasIndex(e => new { e.PollId, e.QuestionIndex, e.Word }).IsUnique();
+
+            entity.HasOne(e => e.Poll)
+                .WithMany(p => p.WordCloudCounts)
                 .HasForeignKey(e => e.PollId)
                 .OnDelete(DeleteBehavior.Cascade);
         });

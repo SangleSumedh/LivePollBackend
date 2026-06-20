@@ -13,6 +13,7 @@ public class PollResponse
     public string Theme { get; set; } = string.Empty;
     public List<QuestionResponse> Questions { get; set; } = new();
     public Dictionary<string, int> VoteCounts { get; set; } = new();
+    public Dictionary<string, Dictionary<string, int>> WordCloudCounts { get; set; } = new();
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

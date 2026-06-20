@@ -18,6 +18,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IPollService, PollService>();
 builder.Services.AddScoped<IVoteService, VoteService>();
+builder.Services.AddSingleton<WordCloudManager>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<WordCloudManager>());
 
 // ── JWT Authentication ──
 var jwtSecret = builder.Configuration["Jwt:Secret"]!;

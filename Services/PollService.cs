@@ -13,11 +13,13 @@ public class PollService : IPollService
 {
     private readonly AppDbContext _db;
     private readonly IHubContext<PollHub> _hubContext;
+    private readonly WordCloudManager _wordCloudManager;
 
-    public PollService(AppDbContext db, IHubContext<PollHub> hubContext)
+    public PollService(AppDbContext db, IHubContext<PollHub> hubContext, WordCloudManager wordCloudManager)
     {
         _db = db;
         _hubContext = hubContext;
+        _wordCloudManager = wordCloudManager;
     }
 
     public async Task<List<PollResponse>> GetPollsAsync(string userId)
@@ -50,10 +52,21 @@ public class PollService : IPollService
             .Include(p => p.Questions.OrderBy(q => q.Index))
                 .ThenInclude(q => q.Options.OrderBy(o => o.Index))
             .Include(p => p.VoteCounts)
+            .Include(p => p.WordCloudCounts)
             .FirstOrDefaultAsync(p => p.Id == pollId);
 
         if (poll == null)
             throw new NotFoundException($"Poll '{pollId}' not found");
+
+        // Populate the in-memory cache from the DB snapshot for word cloud questions
+        foreach (var question in poll.Questions.Where(q => q.Type == QuestionType.WordCloud))
+        {
+            var dbCountsForQuestion = poll.WordCloudCounts
+                .Where(w => w.QuestionIndex == question.Index)
+                .ToDictionary(w => w.Word, w => w.Count, StringComparer.OrdinalIgnoreCase);
+
+            _wordCloudManager.LoadFromDb(poll.Id, question.Index, dbCountsForQuestion);
+        }
 
         return MapToResponse(poll);
     }
@@ -80,36 +93,47 @@ public class PollService : IPollService
         int qIdx = 0;
         foreach (var qDto in request.Questions)
         {
+            var qType = Enum.TryParse<QuestionType>(qDto.Type, true, out var parsedType) 
+                ? parsedType 
+                : QuestionType.MultipleChoice;
+
             var question = new Question
             {
                 PollId = pollId,
                 Index = qIdx,
-                Text = qDto.Text.Trim()
+                Text = qDto.Text.Trim(),
+                Type = qType
             };
 
             int oIdx = 0;
-            foreach (var optText in qDto.Options.Where(o => !string.IsNullOrWhiteSpace(o)))
+            if (qType == QuestionType.MultipleChoice)
             {
-                question.Options.Add(new Option
+                foreach (var optText in qDto.Options.Where(o => !string.IsNullOrWhiteSpace(o)))
                 {
-                    Index = oIdx,
-                    Text = optText.Trim()
-                });
-                oIdx++;
+                    question.Options.Add(new Option
+                    {
+                        Index = oIdx,
+                        Text = optText.Trim()
+                    });
+                    oIdx++;
+                }
             }
 
             poll.Questions.Add(question);
 
-            // Create VoteCount rows for each option
-            for (int o = 0; o < oIdx; o++)
+            if (qType == QuestionType.MultipleChoice)
             {
-                poll.VoteCounts.Add(new VoteCount
+                // Create VoteCount rows for each option
+                for (int o = 0; o < oIdx; o++)
                 {
-                    PollId = pollId,
-                    QuestionIndex = qIdx,
-                    OptionIndex = o,
-                    Count = 0
-                });
+                    poll.VoteCounts.Add(new VoteCount
+                    {
+                        PollId = pollId,
+                        QuestionIndex = qIdx,
+                        OptionIndex = o,
+                        Count = 0
+                    });
+                }
             }
 
             qIdx++;
@@ -129,16 +153,26 @@ public class PollService : IPollService
             .Include(p => p.Questions.OrderBy(q => q.Index))
                 .ThenInclude(q => q.Options.OrderBy(o => o.Index))
             .Include(p => p.VoteCounts)
+            .Include(p => p.WordCloudCounts)
             .FirstOrDefaultAsync(p => p.Id == pollId);
 
         if (poll == null)
             throw new NotFoundException($"Poll '{pollId}' not found");
+
+        // Invalidate word cloud cache keys for old questions
+        foreach (var q in poll.Questions.Where(q => q.Type == QuestionType.WordCloud))
+        {
+            _wordCloudManager.InvalidateKey(pollId, q.Index);
+        }
 
         // Remove existing questions/options (cascade deletes options)
         _db.Questions.RemoveRange(poll.Questions);
 
         // Remove existing vote counts
         _db.VoteCounts.RemoveRange(poll.VoteCounts);
+
+        // Remove existing word cloud counts
+        _db.WordCloudCounts.RemoveRange(poll.WordCloudCounts);
 
         poll.Title = request.Title.Trim();
         poll.Theme = string.IsNullOrWhiteSpace(request.Theme) ? "default" : request.Theme.Trim();
@@ -147,35 +181,46 @@ public class PollService : IPollService
         int qIdx = 0;
         foreach (var qDto in request.Questions)
         {
+            var qType = Enum.TryParse<QuestionType>(qDto.Type, true, out var parsedType) 
+                ? parsedType 
+                : QuestionType.MultipleChoice;
+
             var question = new Question
             {
                 PollId = pollId,
                 Index = qIdx,
-                Text = qDto.Text.Trim()
+                Text = qDto.Text.Trim(),
+                Type = qType
             };
 
             int oIdx = 0;
-            foreach (var optText in qDto.Options.Where(o => !string.IsNullOrWhiteSpace(o)))
+            if (qType == QuestionType.MultipleChoice)
             {
-                question.Options.Add(new Option
+                foreach (var optText in qDto.Options.Where(o => !string.IsNullOrWhiteSpace(o)))
                 {
-                    Index = oIdx,
-                    Text = optText.Trim()
-                });
-                oIdx++;
+                    question.Options.Add(new Option
+                    {
+                        Index = oIdx,
+                        Text = optText.Trim()
+                    });
+                    oIdx++;
+                }
             }
 
             poll.Questions.Add(question);
 
-            for (int o = 0; o < oIdx; o++)
+            if (qType == QuestionType.MultipleChoice)
             {
-                poll.VoteCounts.Add(new VoteCount
+                for (int o = 0; o < oIdx; o++)
                 {
-                    PollId = pollId,
-                    QuestionIndex = qIdx,
-                    OptionIndex = o,
-                    Count = 0
-                });
+                    poll.VoteCounts.Add(new VoteCount
+                    {
+                        PollId = pollId,
+                        QuestionIndex = qIdx,
+                        OptionIndex = o,
+                        Count = 0
+                    });
+                }
             }
 
             qIdx++;
@@ -201,23 +246,34 @@ public class PollService : IPollService
     public async Task RestartPollAsync(string pollId)
     {
         var poll = await _db.Polls
+            .Include(p => p.Questions)
             .Include(p => p.Votes)
             .Include(p => p.VoteCounts)
+            .Include(p => p.WordCloudCounts)
             .FirstOrDefaultAsync(p => p.Id == pollId);
 
         if (poll == null)
             throw new NotFoundException($"Poll '{pollId}' not found");
 
-        // Remove all votes
+        // 1. Invalidate in-memory word cloud caches first to prevent concurrent submission ghost writes
+        foreach (var q in poll.Questions.Where(q => q.Type == QuestionType.WordCloud))
+        {
+            _wordCloudManager.InvalidateKey(pollId, q.Index);
+        }
+
+        // 2. Remove all DB votes
         _db.Votes.RemoveRange(poll.Votes);
 
-        // Reset vote counts to zero
+        // 3. Remove all DB word cloud counts
+        _db.WordCloudCounts.RemoveRange(poll.WordCloudCounts);
+
+        // 4. Reset multiple-choice vote counts to zero
         foreach (var vc in poll.VoteCounts)
         {
             vc.Count = 0;
         }
 
-        // Reset poll state
+        // 5. Reset poll state
         poll.Status = PollStatus.Draft;
         poll.ActiveQuestionIndex = -1;
         poll.CurrentQuestionActive = false;
@@ -305,12 +361,36 @@ public class PollService : IPollService
 
     // ── Helpers ──
 
-    private static PollResponse MapToResponse(Poll poll)
+    private PollResponse MapToResponse(Poll poll)
     {
         var voteCounts = new Dictionary<string, int>();
         foreach (var vc in poll.VoteCounts)
         {
             voteCounts[$"{vc.QuestionIndex}_{vc.OptionIndex}"] = vc.Count;
+        }
+
+        var wordCloudCounts = new Dictionary<string, Dictionary<string, int>>();
+
+        // 1. Group DB persisted counts
+        foreach (var wcc in poll.WordCloudCounts)
+        {
+            var qKey = wcc.QuestionIndex.ToString();
+            if (!wordCloudCounts.ContainsKey(qKey))
+            {
+                wordCloudCounts[qKey] = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            }
+            wordCloudCounts[qKey][wcc.Word] = wcc.Count;
+        }
+
+        // 2. Overwrite/merge with live memory counts if present in cache (source of truth)
+        foreach (var q in poll.Questions.Where(q => q.Type == QuestionType.WordCloud))
+        {
+            var qKey = q.Index.ToString();
+            var liveCounts = _wordCloudManager.GetTop50(poll.Id, q.Index);
+            if (liveCounts.Count > 0)
+            {
+                wordCloudCounts[qKey] = liveCounts;
+            }
         }
 
         return new PollResponse
@@ -328,6 +408,7 @@ public class PollService : IPollService
             {
                 Index = q.Index,
                 Text = q.Text,
+                Type = q.Type.ToString(),
                 Options = q.Options.Select(o => new OptionResponse
                 {
                     Index = o.Index,
@@ -335,6 +416,7 @@ public class PollService : IPollService
                 }).ToList()
             }).ToList(),
             VoteCounts = voteCounts,
+            WordCloudCounts = wordCloudCounts,
             CreatedAt = poll.CreatedAt,
             UpdatedAt = poll.UpdatedAt
         };

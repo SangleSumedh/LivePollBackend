@@ -20,4 +20,5 @@ public class Poll
     public ICollection<Question> Questions { get; set; } = new List<Question>();
     public ICollection<VoteCount> VoteCounts { get; set; } = new List<VoteCount>();
     public ICollection<Vote> Votes { get; set; } = new List<Vote>();
+    public ICollection<WordCloudCount> WordCloudCounts { get; set; } = new List<WordCloudCount>();
 }
