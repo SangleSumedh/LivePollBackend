@@ -10,6 +10,7 @@ public class PollResponse
     public string Status { get; set; } = string.Empty;
     public int ActiveQuestionIndex { get; set; }
     public bool CurrentQuestionActive { get; set; }
+    public string Theme { get; set; } = string.Empty;
     public List<QuestionResponse> Questions { get; set; } = new();
     public Dictionary<string, int> VoteCounts { get; set; } = new();
     public DateTime CreatedAt { get; set; }

@@ -12,6 +12,7 @@ public class Poll
     public PollStatus Status { get; set; } = PollStatus.Draft;
     public int ActiveQuestionIndex { get; set; } = -1;
     public bool CurrentQuestionActive { get; set; }
+    public string Theme { get; set; } = "default";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

@@ -35,6 +35,7 @@ public class PollService : IPollService
                 Status = p.Status.ToString(),
                 ActiveQuestionIndex = p.ActiveQuestionIndex,
                 CurrentQuestionActive = p.CurrentQuestionActive,
+                Theme = p.Theme,
                 CreatedAt = p.CreatedAt,
                 UpdatedAt = p.UpdatedAt
             })
@@ -65,6 +66,7 @@ public class PollService : IPollService
         {
             Id = pollId,
             Title = request.Title.Trim(),
+            Theme = string.IsNullOrWhiteSpace(request.Theme) ? "default" : request.Theme.Trim(),
             CreatedBy = userId,
             CreatedByEmail = userEmail,
             CreatedByName = string.IsNullOrWhiteSpace(userName) ? "Anonymous" : userName,
@@ -139,6 +141,7 @@ public class PollService : IPollService
         _db.VoteCounts.RemoveRange(poll.VoteCounts);
 
         poll.Title = request.Title.Trim();
+        poll.Theme = string.IsNullOrWhiteSpace(request.Theme) ? "default" : request.Theme.Trim();
         poll.UpdatedAt = DateTime.UtcNow;
 
         int qIdx = 0;
@@ -320,6 +323,7 @@ public class PollService : IPollService
             Status = poll.Status.ToString(),
             ActiveQuestionIndex = poll.ActiveQuestionIndex,
             CurrentQuestionActive = poll.CurrentQuestionActive,
+            Theme = poll.Theme,
             Questions = poll.Questions.Select(q => new QuestionResponse
             {
                 Index = q.Index,

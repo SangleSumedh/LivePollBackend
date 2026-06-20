@@ -34,6 +34,7 @@ public class AppDbContext : DbContext
                 .HasDefaultValue(PollStatus.Draft);
             entity.Property(e => e.ActiveQuestionIndex).HasDefaultValue(-1);
             entity.Property(e => e.CurrentQuestionActive).HasDefaultValue(false);
+            entity.Property(e => e.Theme).HasMaxLength(50).HasDefaultValue("default");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("NOW()");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("NOW()");
         });
