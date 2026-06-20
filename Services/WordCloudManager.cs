@@ -215,35 +215,13 @@ public class WordCloudManager : IHostedService, IDisposable
     {
         if (string.IsNullOrWhiteSpace(input)) return new List<string>();
 
-        var lowercase = input.ToLowerInvariant();
-
-        // Replace punctuation with spaces to avoid merging words (e.g. "hello,world" -> "hello world")
-        var sb = new StringBuilder();
-        foreach (var c in lowercase)
+        var trimmed = input.Trim();
+        if (trimmed.Length > 50)
         {
-            if (char.IsPunctuation(c))
-            {
-                sb.Append(' ');
-            }
-            else
-            {
-                sb.Append(c);
-            }
+            trimmed = trimmed.Substring(0, 50).Trim();
         }
 
-        var tokens = sb.ToString().Split(new[] { ' ', '\r', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-        var result = new List<string>();
-
-        foreach (var token in tokens)
-        {
-            var word = token.Trim();
-            if (word.Length > 0)
-            {
-                result.Add(word);
-            }
-        }
-
-        return result;
+        return new List<string> { trimmed };
     }
 
     /// <summary>

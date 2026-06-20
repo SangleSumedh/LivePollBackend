@@ -71,8 +71,8 @@ public class VoteService : IVoteService
                 if (string.IsNullOrWhiteSpace(request.Text))
                     throw new InvalidOperationException("Text input is required for word cloud questions");
 
-                if (request.Text.Length > 200)
-                    throw new InvalidOperationException("Submitted text exceeds maximum length of 200 characters");
+                if (request.Text.Length > 50)
+                    throw new InvalidOperationException("Submitted text exceeds maximum length of 50 characters");
 
                 // Insert vote
                 _db.Votes.Add(new Vote

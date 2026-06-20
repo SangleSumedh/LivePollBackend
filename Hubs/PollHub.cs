@@ -20,4 +20,22 @@ public class PollHub : Hub
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"poll_{pollId}");
     }
+
+    /// <summary>Join the presenter group to receive real-time reactions and updates.</summary>
+    public async Task JoinPresenterGroup(string pollId)
+    {
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"poll_{pollId}_presenter");
+    }
+
+    /// <summary>Leave the presenter group.</summary>
+    public async Task LeavePresenterGroup(string pollId)
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"poll_{pollId}_presenter");
+    }
+
+    /// <summary>Send an emoji reaction to the presenter's group only.</summary>
+    public async Task SendEmojiReaction(string pollId, string emoji)
+    {
+        await Clients.Group($"poll_{pollId}_presenter").SendAsync("EmojiReceived", new { pollId, emoji });
+    }
 }
