@@ -295,35 +295,38 @@ public class BiddingService : IBiddingService
         _db.SkillBids.RemoveRange(priorUncommitted);
 
         // Add committed bids
-        foreach (var skillId in skillIds.Distinct())
+        var groupedBids = skillIds.GroupBy(id => id).ToDictionary(g => g.Key, g => g.Count());
+        foreach (var pair in groupedBids)
         {
+            var skillId = pair.Key;
+            var count = pair.Value;
             _db.SkillBids.Add(new SkillBid
             {
                 BiddingPollId = pollId,
                 SkillId = skillId,
                 SessionId = sessionId,
                 Cohort = cohort,
-                CoinsSpent = cost,
+                CoinsSpent = cost * count,
                 IsCommitted = true
             });
         }
-
+ 
         await _db.SaveChangesAsync();
-
+ 
         // Broadcast count update
         var totalParticipantsCommitted = await _db.SkillBids
             .Where(b => b.BiddingPollId == pollId && b.IsCommitted)
             .Select(b => b.SessionId)
             .Distinct()
             .CountAsync();
-
+ 
         await _hubContext.Clients.Group($"poll_{pollId}_presenter").SendAsync("ParticipantSubmittedCountUpdate", new
         {
             pollId,
             committedCount = totalParticipantsCommitted
         });
     }
-
+ 
     public async Task<BiddingAnalyticsSummary> GetAnalyticsAsync(string pollId)
     {
         var poll = await _db.BiddingPolls
@@ -331,7 +334,7 @@ public class BiddingService : IBiddingService
             .FirstOrDefaultAsync(p => p.Id == pollId);
         if (poll == null)
             throw new NotFoundException($"Bidding poll '{pollId}' not found");
-
+ 
         var skills = poll.Skills.Any() 
             ? poll.Skills.ToList() 
             : await _db.Skills.ToListAsync();
@@ -340,9 +343,10 @@ public class BiddingService : IBiddingService
         var bids = await _db.SkillBids
             .Where(b => b.BiddingPollId == pollId)
             .ToListAsync();
-
-        var hrVotes = bids.Where(b => b.Cohort == "HR").GroupBy(b => b.SkillId).ToDictionary(g => g.Key, g => g.Count());
-        var academiaVotes = bids.Where(b => b.Cohort == "ACADEMIA").GroupBy(b => b.SkillId).ToDictionary(g => g.Key, g => g.Count());
+ 
+        var cost = poll.SkillCost > 0 ? poll.SkillCost : 20;
+        var hrVotes = bids.Where(b => b.Cohort == "HR").GroupBy(b => b.SkillId).ToDictionary(g => g.Key, g => g.Sum(b => b.CoinsSpent / cost));
+        var academiaVotes = bids.Where(b => b.Cohort == "ACADEMIA").GroupBy(b => b.SkillId).ToDictionary(g => g.Key, g => g.Sum(b => b.CoinsSpent / cost));
 
         var summary = new BiddingAnalyticsSummary { PollId = pollId };
 

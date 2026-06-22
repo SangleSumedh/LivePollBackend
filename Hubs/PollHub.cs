@@ -14,6 +14,17 @@ public class PollHub : Hub
     public async Task JoinPollGroup(string pollId)
     {
         await Groups.AddToGroupAsync(Context.ConnectionId, $"poll_{pollId}");
+
+        var tracker = Context.GetHttpContext()?.RequestServices.GetRequiredService<BiddingStateTracker>();
+        if (tracker != null)
+        {
+            var counts = tracker.GetCounts(pollId);
+            await Clients.Caller.SendAsync("ReceiveBubbleData", new
+            {
+                pollId,
+                counts = counts.ToDictionary(k => k.Key.ToString(), v => v.Value)
+            });
+        }
     }
 
     /// <summary>Leave a poll's group to stop receiving updates.</summary>
