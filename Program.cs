@@ -20,6 +20,8 @@ builder.Services.AddScoped<IPollService, PollService>();
 builder.Services.AddScoped<IVoteService, VoteService>();
 builder.Services.AddSingleton<WordCloudManager>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<WordCloudManager>());
+builder.Services.AddSingleton<BiddingStateTracker>();
+builder.Services.AddScoped<IBiddingService, BiddingService>();
 
 // ── JWT Authentication ──
 var jwtSecret = builder.Configuration["Jwt:Secret"]!;

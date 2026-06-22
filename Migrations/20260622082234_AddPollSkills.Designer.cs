@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using live_poll_backend.Data;
@@ -11,9 +12,11 @@ using live_poll_backend.Data;
 namespace live_poll_backend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260622082234_AddPollSkills")]
+    partial class AddPollSkills
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -22,82 +25,19 @@ namespace live_poll_backend.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("BiddingPollSkill", b =>
+            modelBuilder.Entity("PollSkill", b =>
                 {
-                    b.Property<string>("BiddingPollsId")
+                    b.Property<string>("PollsId")
                         .HasColumnType("character varying(10)");
 
                     b.Property<int>("SkillsId")
                         .HasColumnType("integer");
 
-                    b.HasKey("BiddingPollsId", "SkillsId");
+                    b.HasKey("PollsId", "SkillsId");
 
                     b.HasIndex("SkillsId");
 
-                    b.ToTable("BiddingPollSkills", (string)null);
-                });
-
-            modelBuilder.Entity("live_poll_backend.Models.Entities.BiddingPoll", b =>
-                {
-                    b.Property<string>("Id")
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)");
-
-                    b.Property<bool>("BiddingClosed")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasDefaultValueSql("NOW()");
-
-                    b.Property<string>("CreatedBy")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("CreatedByEmail")
-                        .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
-
-                    b.Property<string>("CreatedByName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<bool>("IsBiddingActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
-
-                    b.Property<int>("SkillCost")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(20);
-
-                    b.Property<string>("Theme")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasDefaultValue("synergy_sphere");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasDefaultValueSql("NOW()");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("BiddingPolls");
+                    b.ToTable("PollSkills", (string)null);
                 });
 
             modelBuilder.Entity("live_poll_backend.Models.Entities.Option", b =>
@@ -137,6 +77,11 @@ namespace live_poll_backend.Migrations
                         .HasColumnType("integer")
                         .HasDefaultValue(-1);
 
+                    b.Property<bool>("BiddingClosed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
@@ -161,6 +106,16 @@ namespace live_poll_backend.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
+
+                    b.Property<bool>("IsBiddingActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<int>("SkillCost")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(20);
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -261,10 +216,6 @@ namespace live_poll_backend.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
-                    b.Property<string>("BiddingPollId")
-                        .IsRequired()
-                        .HasColumnType("character varying(10)");
-
                     b.Property<string>("Cohort")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -283,6 +234,10 @@ namespace live_poll_backend.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
 
+                    b.Property<string>("PollId")
+                        .IsRequired()
+                        .HasColumnType("character varying(10)");
+
                     b.Property<string>("SessionId")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -295,7 +250,7 @@ namespace live_poll_backend.Migrations
 
                     b.HasIndex("SkillId");
 
-                    b.HasIndex("BiddingPollId", "SkillId", "SessionId")
+                    b.HasIndex("PollId", "SkillId", "SessionId")
                         .IsUnique();
 
                     b.ToTable("SkillBids");
@@ -439,11 +394,11 @@ namespace live_poll_backend.Migrations
                     b.ToTable("WordCloudCounts");
                 });
 
-            modelBuilder.Entity("BiddingPollSkill", b =>
+            modelBuilder.Entity("PollSkill", b =>
                 {
-                    b.HasOne("live_poll_backend.Models.Entities.BiddingPoll", null)
+                    b.HasOne("live_poll_backend.Models.Entities.Poll", null)
                         .WithMany()
-                        .HasForeignKey("BiddingPollsId")
+                        .HasForeignKey("PollsId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -478,9 +433,9 @@ namespace live_poll_backend.Migrations
 
             modelBuilder.Entity("live_poll_backend.Models.Entities.SkillBid", b =>
                 {
-                    b.HasOne("live_poll_backend.Models.Entities.BiddingPoll", "BiddingPoll")
+                    b.HasOne("live_poll_backend.Models.Entities.Poll", "Poll")
                         .WithMany()
-                        .HasForeignKey("BiddingPollId")
+                        .HasForeignKey("PollId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -490,7 +445,7 @@ namespace live_poll_backend.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("BiddingPoll");
+                    b.Navigation("Poll");
 
                     b.Navigation("Skill");
                 });

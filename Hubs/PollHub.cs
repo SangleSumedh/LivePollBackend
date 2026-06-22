@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.SignalR;
+using live_poll_backend.Services;
 
 namespace live_poll_backend.Hubs;
 
@@ -37,5 +38,12 @@ public class PollHub : Hub
     public async Task SendEmojiReaction(string pollId, string emoji)
     {
         await Clients.Group($"poll_{pollId}_presenter").SendAsync("EmojiReceived", new { pollId, emoji });
+    }
+
+    /// <summary>Notify server of an ephemeral selection change from a participant.</summary>
+    public void NotifySelectionChange(string pollId, string sessionId, int skillId, bool isSelected)
+    {
+        var tracker = Context.GetHttpContext()?.RequestServices.GetRequiredService<BiddingStateTracker>();
+        tracker?.UpdateSelection(pollId, sessionId, skillId, isSelected);
     }
 }
