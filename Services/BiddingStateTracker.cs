@@ -65,20 +65,12 @@ public class BiddingStateTracker
         var result = new Dictionary<int, int>();
         var key = (pollId, questionIndex);
 
-        // 1. Get all sessionIds that are currently active in memory for this question
-        var activeSessionIds = new HashSet<string>();
-        ConcurrentDictionary<string, ConcurrentDictionary<int, int>>? qMap = null;
-        if (_ephemeralSelections.TryGetValue(key, out qMap))
-        {
-            activeSessionIds = qMap.Keys.ToHashSet();
-        }
-
-        // 2. Load bids from DB for committed sessions, or sessions that are not active in memory right now
+        // 1. Load committed bids from DB
         using (var scope = _scopeFactory.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var dbBids = db.SkillBids
-                .Where(b => b.BiddingPollId == pollId && b.QuestionIndex == questionIndex && (b.IsCommitted || !activeSessionIds.Contains(b.SessionId)))
+                .Where(b => b.BiddingPollId == pollId && b.QuestionIndex == questionIndex && b.IsCommitted)
                 .ToList();
 
             foreach (var bid in dbBids)
@@ -90,8 +82,8 @@ public class BiddingStateTracker
             }
         }
 
-        // 3. Add current in-memory bids for active users
-        if (qMap != null)
+        // 2. Add current in-memory bids for active users
+        if (_ephemeralSelections.TryGetValue(key, out var qMap))
         {
             foreach (var userPair in qMap)
             {
@@ -233,6 +225,33 @@ public class BiddingStateTracker
             return userBids.ToDictionary(k => k.Key, v => v.Value);
         }
         return new Dictionary<int, int>();
+    }
+
+    /// <summary>
+    /// Returns true if the session already has ephemeral data in the tracker for ANY question in this poll.
+    /// Used to avoid overwriting current tracker data with stale DB data on reconnect.
+    /// </summary>
+    public bool HasSessionData(string pollId, string sessionId)
+    {
+        return _ephemeralSelections.Any(kvp =>
+            kvp.Key.PollId == pollId &&
+            kvp.Value.ContainsKey(sessionId));
+    }
+
+    /// <summary>
+    /// Removes all ephemeral data for a specific session in a poll.
+    /// Called when a user disconnects from SignalR.
+    /// </summary>
+    public void RemoveSession(string pollId, string sessionId)
+    {
+        var keysToCheck = _ephemeralSelections.Keys.Where(k => k.PollId == pollId).ToList();
+        foreach (var key in keysToCheck)
+        {
+            if (_ephemeralSelections.TryGetValue(key, out var qMap))
+            {
+                qMap.TryRemove(sessionId, out _);
+            }
+        }
     }
 
     public void ClearPoll(string pollId)

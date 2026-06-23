@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.SignalR;
 using live_poll_backend.Services;
 using live_poll_backend.Data;
@@ -12,8 +13,29 @@ namespace live_poll_backend.Hubs;
 /// </summary>
 public class PollHub : Hub
 {
+    /// <summary>
+    /// Tracks connectionId -> (pollId, sessionId) mapping so we can
+    /// clean up ephemeral tracker data when a user disconnects.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, (string PollId, string SessionId)> _connections = new();
+
+    /// <summary>Clean up ephemeral bidding state when a user disconnects.</summary>
+    public override async Task OnDisconnectedAsync(Exception? exception)
+    {
+        if (_connections.TryRemove(Context.ConnectionId, out var info))
+        {
+            var serviceProvider = Context.GetHttpContext()?.RequestServices;
+            if (serviceProvider != null)
+            {
+                var tracker = serviceProvider.GetRequiredService<BiddingStateTracker>();
+                tracker.RemoveSession(info.PollId, info.SessionId);
+            }
+        }
+        await base.OnDisconnectedAsync(exception);
+    }
+
     /// <summary>Join a poll's group to receive real-time updates.</summary>
-    public async Task JoinPollGroup(string pollId)
+    public async Task JoinPollGroup(string pollId, string sessionId)
     {
         await Groups.AddToGroupAsync(Context.ConnectionId, $"poll_{pollId}");
 
@@ -22,6 +44,26 @@ public class PollHub : Hub
         {
             var tracker = serviceProvider.GetRequiredService<BiddingStateTracker>();
             var db = serviceProvider.GetRequiredService<AppDbContext>();
+
+            // Track this connection for cleanup on disconnect
+            if (!string.IsNullOrEmpty(sessionId))
+            {
+                _connections[Context.ConnectionId] = (pollId, sessionId);
+            }
+
+            // Only load uncommitted bids from DB if the session has NO ephemeral data in the tracker.
+            // The tracker always has the most recent data (updated on every stepper change).
+            // Loading stale DB data would overwrite the user's current in-memory bids.
+            if (!string.IsNullOrEmpty(sessionId) && !tracker.HasSessionData(pollId, sessionId))
+            {
+                var dbBids = await db.SkillBids
+                    .Where(b => b.BiddingPollId == pollId && b.SessionId == sessionId && !b.IsCommitted)
+                    .ToListAsync();
+                foreach (var bid in dbBids)
+                {
+                    tracker.UpdateBid(pollId, bid.QuestionIndex, sessionId, bid.BiddingSkillId, bid.CoinsSpent);
+                }
+            }
 
             var poll = await db.BiddingPolls.FindAsync(pollId);
             if (poll != null && poll.ActiveQuestionIndex >= 0)

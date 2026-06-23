@@ -295,6 +295,7 @@ public class BiddingService : IBiddingService
         poll.ActiveQuestionIndex = questionIndex;
         poll.CurrentCohort = cohort;
         poll.IsBiddingActive = true;
+        poll.BiddingClosed = false;
         poll.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
