@@ -7,10 +7,6 @@ namespace live_poll_backend.Services;
 
 public interface IBiddingService
 {
-    Task<List<Skill>> GetSkillsAsync();
-    Task<Skill> AddSkillAsync(string name, string category);
-    Task DeleteSkillAsync(int id);
-    
     // BiddingPoll CRUD
     Task<List<BiddingPollResponse>> GetBiddingPollsAsync(string userId);
     Task<BiddingPollResponse> GetBiddingPollByIdAsync(string pollId);
@@ -19,8 +15,9 @@ public interface IBiddingService
     Task DeleteBiddingPollAsync(string pollId);
     Task RestartBiddingPollAsync(string pollId);
 
-    Task StartBiddingAsync(string pollId);
+    Task StartQuestionAsync(string pollId, int questionIndex, string cohort);
     Task StopBiddingAsync(string pollId);
-    Task LockInBidsAsync(string pollId, string sessionId, List<int> skillIds);
+    Task PlaceBidAsync(string pollId, PlaceBidRequest request);
+    Task<BiddingPollResponse> CloneBiddingPollAsync(string pollId, string userId, string userEmail, string userName);
     Task<BiddingAnalyticsSummary> GetAnalyticsAsync(string pollId);
 }

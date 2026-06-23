@@ -15,7 +15,8 @@ public class AppDbContext : DbContext
     public DbSet<Vote> Votes => Set<Vote>();
     public DbSet<User> Users => Set<User>();
     public DbSet<WordCloudCount> WordCloudCounts => Set<WordCloudCount>();
-    public DbSet<Skill> Skills => Set<Skill>();
+    public DbSet<BiddingQuestion> BiddingQuestions => Set<BiddingQuestion>();
+    public DbSet<BiddingSkill> BiddingSkills => Set<BiddingSkill>();
     public DbSet<SkillBid> SkillBids => Set<SkillBid>();
     public DbSet<BiddingPoll> BiddingPolls => Set<BiddingPoll>();
 
@@ -130,13 +131,33 @@ public class AppDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("NOW()");
         });
 
-        // ── Skill ──
-        modelBuilder.Entity<Skill>(entity =>
+        // ── BiddingQuestion ──
+        modelBuilder.Entity<BiddingQuestion>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Text).IsRequired().HasMaxLength(1000);
+            entity.Property(e => e.Index).IsRequired();
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("NOW()");
+
+            entity.HasOne(e => e.BiddingPoll)
+                .WithMany(p => p.Questions)
+                .HasForeignKey(e => e.BiddingPollId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── BiddingSkill ──
+        modelBuilder.Entity<BiddingSkill>(entity =>
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Name).IsRequired().HasMaxLength(200);
             entity.Property(e => e.Category).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Index).IsRequired();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("NOW()");
+
+            entity.HasOne(e => e.BiddingQuestion)
+                .WithMany(q => q.Skills)
+                .HasForeignKey(e => e.BiddingQuestionId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // ── SkillBid ──
@@ -147,18 +168,20 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Cohort).IsRequired().HasMaxLength(50);
             entity.Property(e => e.CoinsSpent).IsRequired();
             entity.Property(e => e.IsCommitted).HasDefaultValue(false);
+            entity.Property(e => e.QuestionIndex).IsRequired();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("NOW()");
 
-            entity.HasIndex(e => new { e.BiddingPollId, e.SkillId, e.SessionId }).IsUnique();
+            entity.HasIndex(e => new { e.BiddingPollId, e.BiddingSkillId, e.SessionId, e.Cohort }).IsUnique();
+            entity.HasIndex(e => new { e.BiddingPollId, e.SessionId, e.Cohort });
 
             entity.HasOne(e => e.BiddingPoll)
                 .WithMany()
                 .HasForeignKey(e => e.BiddingPollId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            entity.HasOne(e => e.Skill)
+            entity.HasOne(e => e.BiddingSkill)
                 .WithMany()
-                .HasForeignKey(e => e.SkillId)
+                .HasForeignKey(e => e.BiddingSkillId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -173,16 +196,11 @@ public class AppDbContext : DbContext
             entity.Property(e => e.CreatedByName).HasMaxLength(200);
             entity.Property(e => e.IsBiddingActive).HasDefaultValue(false);
             entity.Property(e => e.BiddingClosed).HasDefaultValue(false);
-            entity.Property(e => e.SkillCost).HasDefaultValue(20);
             entity.Property(e => e.Theme).HasMaxLength(50).HasDefaultValue("synergy_sphere");
+            entity.Property(e => e.ActiveQuestionIndex).HasDefaultValue(-1);
+            entity.Property(e => e.CurrentCohort).HasMaxLength(50).HasDefaultValue("");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("NOW()");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("NOW()");
         });
-
-        // ── Many-to-Many BiddingPoll <-> Skill ──
-        modelBuilder.Entity<BiddingPoll>()
-            .HasMany(p => p.Skills)
-            .WithMany(s => s.BiddingPolls)
-            .UsingEntity(j => j.ToTable("BiddingPollSkills"));
     }
 }

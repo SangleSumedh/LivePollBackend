@@ -14,11 +14,12 @@ public class BiddingStateTracker
     private readonly IHubContext<PollHub> _hubContext;
     private readonly IServiceScopeFactory _scopeFactory;
 
-    // pollId -> (sessionId -> list of skillIds)
-    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, List<int>>> _ephemeralSelections = new();
+    // (pollId, questionIndex) -> (sessionId -> Dict<biddingSkillId, coins>)
+    private readonly ConcurrentDictionary<(string PollId, int QuestionIndex), ConcurrentDictionary<string, ConcurrentDictionary<int, int>>> _ephemeralSelections = new();
     
     // Timer for 100ms broadcast debounce
-    private readonly ConcurrentDictionary<string, byte> _dirtyPolls = new();
+    // Tracks dirty (pollId, questionIndex)
+    private readonly ConcurrentDictionary<(string PollId, int QuestionIndex), byte> _dirtyQuestions = new();
     private readonly System.Timers.Timer _debounceTimer;
  
     // Timer for 2-minute DB flush
@@ -40,97 +41,68 @@ public class BiddingStateTracker
         _flushTimer.AutoReset = true;
         _flushTimer.Start();
     }
- 
-    // pollId -> skillCost
-    private readonly ConcurrentDictionary<string, int> _pollCosts = new();
 
-    public void UpdateSelection(string pollId, string sessionId, int skillId, bool isSelected)
+    public void UpdateBid(string pollId, int questionIndex, string sessionId, int biddingSkillId, int amount)
     {
-        var pollMap = _ephemeralSelections.GetOrAdd(pollId, _ => new ConcurrentDictionary<string, List<int>>());
-        var userList = pollMap.GetOrAdd(sessionId, _ => new List<int>());
+        var key = (pollId, questionIndex);
+        var qMap = _ephemeralSelections.GetOrAdd(key, _ => new ConcurrentDictionary<string, ConcurrentDictionary<int, int>>());
+        var userBids = qMap.GetOrAdd(sessionId, _ => new ConcurrentDictionary<int, int>());
 
-        int cost = _pollCosts.GetOrAdd(pollId, id =>
+        if (amount <= 0)
         {
-            using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var poll = db.BiddingPolls.Find(id);
-            return poll?.SkillCost ?? 20;
-        });
-
-        int maxPicks = 100 / cost;
-
-        lock (userList)
+            userBids.TryRemove(biddingSkillId, out _);
+        }
+        else
         {
-            if (isSelected)
-            {
-                if (userList.Count < maxPicks)
-                {
-                    userList.Add(skillId);
-                }
-            }
-            else
-            {
-                userList.Remove(skillId);
-            }
+            userBids[biddingSkillId] = amount;
         }
 
-        _dirtyPolls[pollId] = 0;
+        _dirtyQuestions[key] = 0;
     }
 
-    public Dictionary<int, int> GetCounts(string pollId)
+    public Dictionary<int, int> GetCounts(string pollId, int questionIndex)
     {
         var result = new Dictionary<int, int>();
+        var key = (pollId, questionIndex);
 
-        // Find poll cost
-        int cost = _pollCosts.GetOrAdd(pollId, id =>
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var poll = db.BiddingPolls.Find(id);
-            return poll?.SkillCost ?? 20;
-        });
-
-        // 1. Get all sessionIds that are currently active in memory
+        // 1. Get all sessionIds that are currently active in memory for this question
         var activeSessionIds = new HashSet<string>();
-        ConcurrentDictionary<string, List<int>>? pollMap = null;
-        if (_ephemeralSelections.TryGetValue(pollId, out pollMap))
+        ConcurrentDictionary<string, ConcurrentDictionary<int, int>>? qMap = null;
+        if (_ephemeralSelections.TryGetValue(key, out qMap))
         {
-            activeSessionIds = pollMap.Keys.ToHashSet();
+            activeSessionIds = qMap.Keys.ToHashSet();
         }
 
-        // 2. Load votes from DB for committed users, or users who are not active in memory right now
+        // 2. Load bids from DB for committed sessions, or sessions that are not active in memory right now
         using (var scope = _scopeFactory.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var dbBids = db.SkillBids
-                .Where(b => b.BiddingPollId == pollId && (b.IsCommitted || !activeSessionIds.Contains(b.SessionId)))
+                .Where(b => b.BiddingPollId == pollId && b.QuestionIndex == questionIndex && (b.IsCommitted || !activeSessionIds.Contains(b.SessionId)))
                 .ToList();
 
             foreach (var bid in dbBids)
             {
-                int voteWeight = cost > 0 ? bid.CoinsSpent / cost : 1;
-                if (result.ContainsKey(bid.SkillId))
-                    result[bid.SkillId] += voteWeight;
+                if (result.ContainsKey(bid.BiddingSkillId))
+                    result[bid.BiddingSkillId] += bid.CoinsSpent;
                 else
-                    result[bid.SkillId] = voteWeight;
+                    result[bid.BiddingSkillId] = bid.CoinsSpent;
             }
         }
 
-        // 3. Add current in-memory votes for active users
-        if (pollMap != null)
+        // 3. Add current in-memory bids for active users
+        if (qMap != null)
         {
-            foreach (var userPair in pollMap)
+            foreach (var userPair in qMap)
             {
-                var userList = userPair.Value;
-                lock (userList)
+                foreach (var bidPair in userPair.Value)
                 {
-                    foreach (var skillId in userList)
-                    {
-                        if (result.ContainsKey(skillId))
-                            result[skillId]++;
-                        else
-                            result[skillId] = 1;
-                    }
+                    var skillId = bidPair.Key;
+                    var coins = bidPair.Value;
+                    if (result.ContainsKey(skillId))
+                        result[skillId] += coins;
+                    else
+                        result[skillId] = coins;
                 }
             }
         }
@@ -140,15 +112,16 @@ public class BiddingStateTracker
 
     private async void OnDebounceTimerElapsed(object? sender, ElapsedEventArgs e)
     {
-        var dirtyList = _dirtyPolls.Keys.ToList();
-        _dirtyPolls.Clear();
+        var dirtyList = _dirtyQuestions.Keys.ToList();
+        _dirtyQuestions.Clear();
 
-        foreach (var pollId in dirtyList)
+        foreach (var key in dirtyList)
         {
-            var counts = GetCounts(pollId);
-            await _hubContext.Clients.Group($"poll_{pollId}").SendAsync("ReceiveBubbleData", new
+            var counts = GetCounts(key.PollId, key.QuestionIndex);
+            await _hubContext.Clients.Group($"poll_{key.PollId}").SendAsync("ReceiveBubbleData", new
             {
-                pollId,
+                pollId = key.PollId,
+                questionIndex = key.QuestionIndex,
                 counts = counts.ToDictionary(k => k.Key.ToString(), v => v.Value)
             });
         }
@@ -156,15 +129,16 @@ public class BiddingStateTracker
 
     private void OnFlushTimerElapsed(object? sender, ElapsedEventArgs e)
     {
-        foreach (var pollId in _ephemeralSelections.Keys)
+        foreach (var key in _ephemeralSelections.Keys)
         {
-            _ = FlushToDatabaseAsync(pollId);
+            _ = FlushForQuestionAsync(key.PollId, key.QuestionIndex);
         }
     }
 
-    public async Task FlushToDatabaseAsync(string pollId)
+    public async Task FlushForQuestionAsync(string pollId, int questionIndex)
     {
-        if (!_ephemeralSelections.TryGetValue(pollId, out var pollMap))
+        var key = (pollId, questionIndex);
+        if (!_ephemeralSelections.TryGetValue(key, out var qMap))
             return;
 
         using var scope = _scopeFactory.CreateScope();
@@ -174,60 +148,55 @@ public class BiddingStateTracker
         if (poll == null || poll.BiddingClosed)
             return;
 
-        var cohort = poll.Theme.ToLower() == "synergysphere" || poll.Theme.ToLower() == "ss" ? "HR" : "ACADEMIA";
-        var cost = poll.SkillCost;
+        var cohort = poll.CurrentCohort;
+        if (string.IsNullOrEmpty(cohort))
+            return;
 
-        // Fetch all existing committed sessionIds to ignore them
+        // Fetch all existing committed sessionIds for this cohort (across all questions) to ignore them if committed
         var committedSessions = await db.SkillBids
-            .Where(b => b.BiddingPollId == pollId && b.IsCommitted)
+            .Where(b => b.BiddingPollId == pollId && b.Cohort == cohort && b.IsCommitted)
             .Select(b => b.SessionId)
             .Distinct()
             .ToListAsync();
 
         var committedSet = new HashSet<string>(committedSessions);
 
-        foreach (var userPair in pollMap)
+        foreach (var userPair in qMap)
         {
             var sessionId = userPair.Key;
             if (committedSet.Contains(sessionId))
                 continue; // Ignore committed users
 
-            List<int> currentSkills;
-            var userList = userPair.Value;
-            lock (userList)
-            {
-                currentSkills = userList.ToList();
-            }
+            var currentBids = userPair.Value.ToDictionary(k => k.Key, v => v.Value);
 
             // Sync with DB:
-            // 1. Get existing uncommitted bids for this session
+            // 1. Get existing uncommitted bids for this session, cohort, question
             var existingBids = await db.SkillBids
-                .Where(b => b.BiddingPollId == pollId && b.SessionId == sessionId && !b.IsCommitted)
+                .Where(b => b.BiddingPollId == pollId && b.SessionId == sessionId && b.Cohort == cohort && b.QuestionIndex == questionIndex && !b.IsCommitted)
                 .ToListAsync();
 
-            var currentGroups = currentSkills.GroupBy(id => id).ToDictionary(g => g.Key, g => g.Count());
-            var existingBidsDict = existingBids.ToDictionary(b => b.SkillId);
+            var existingBidsDict = existingBids.ToDictionary(b => b.BiddingSkillId);
 
             // 2. Add or update
-            foreach (var pair in currentGroups)
+            foreach (var pair in currentBids)
             {
                 var skillId = pair.Key;
-                var count = pair.Value;
-                var spent = cost * count;
+                var coins = pair.Value;
 
                 if (existingBidsDict.TryGetValue(skillId, out var existingBid))
                 {
-                    existingBid.CoinsSpent = spent;
+                    existingBid.CoinsSpent = coins;
                 }
                 else
                 {
                     db.SkillBids.Add(new SkillBid
                     {
                         BiddingPollId = pollId,
-                        SkillId = skillId,
+                        BiddingSkillId = skillId,
                         SessionId = sessionId,
                         Cohort = cohort,
-                        CoinsSpent = spent,
+                        CoinsSpent = coins,
+                        QuestionIndex = questionIndex,
                         IsCommitted = false
                     });
                 }
@@ -236,7 +205,7 @@ public class BiddingStateTracker
             // 3. Remove deselected ones
             foreach (var bid in existingBids)
             {
-                if (!currentGroups.ContainsKey(bid.SkillId))
+                if (!currentBids.ContainsKey(bid.BiddingSkillId))
                 {
                     db.SkillBids.Remove(bid);
                 }
@@ -246,8 +215,32 @@ public class BiddingStateTracker
         await db.SaveChangesAsync();
     }
 
+    public async Task FlushToDatabaseAsync(string pollId)
+    {
+        // Flush all questions for this poll
+        var keysToFlush = _ephemeralSelections.Keys.Where(k => k.PollId == pollId).ToList();
+        foreach (var key in keysToFlush)
+        {
+            await FlushForQuestionAsync(key.PollId, key.QuestionIndex);
+        }
+    }
+
+    public Dictionary<int, int> GetUserBidsForQuestion(string pollId, int questionIndex, string sessionId)
+    {
+        var key = (pollId, questionIndex);
+        if (_ephemeralSelections.TryGetValue(key, out var qMap) && qMap.TryGetValue(sessionId, out var userBids))
+        {
+            return userBids.ToDictionary(k => k.Key, v => v.Value);
+        }
+        return new Dictionary<int, int>();
+    }
+
     public void ClearPoll(string pollId)
     {
-        _ephemeralSelections.TryRemove(pollId, out _);
+        var keysToRemove = _ephemeralSelections.Keys.Where(k => k.PollId == pollId).ToList();
+        foreach (var key in keysToRemove)
+        {
+            _ephemeralSelections.TryRemove(key, out _);
+        }
     }
 }

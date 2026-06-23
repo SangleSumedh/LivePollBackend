@@ -111,37 +111,20 @@ public class BiddingController : ControllerBase
         {
             return NotFound(new { error = ex.Message });
         }
-    }
-
-    [AllowAnonymous]
-    [HttpGet("skills")]
-    public async Task<IActionResult> GetSkills()
-    {
-        var skills = await _biddingService.GetSkillsAsync();
-        return Ok(skills);
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
     }
 
     [Authorize]
-    [HttpPost("skills")]
-    public async Task<IActionResult> AddSkill([FromBody] AddSkillRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.Name))
-            return BadRequest(new { error = "Skill name is required" });
-        if (string.IsNullOrWhiteSpace(request.Category))
-            return BadRequest(new { error = "Category is required" });
-
-        var skill = await _biddingService.AddSkillAsync(request.Name, request.Category);
-        return Created("", skill);
-    }
-
-    [Authorize]
-    [HttpDelete("skills/{id}")]
-    public async Task<IActionResult> DeleteSkill(int id)
+    [HttpPost("polls/{pollId}/clone")]
+    public async Task<IActionResult> CloneBiddingPoll(string pollId)
     {
         try
         {
-            await _biddingService.DeleteSkillAsync(id);
-            return NoContent();
+            var poll = await _biddingService.CloneBiddingPollAsync(pollId, GetUserId(), GetUserEmail(), GetUserName());
+            return Ok(poll);
         }
         catch (NotFoundException ex)
         {
@@ -151,16 +134,27 @@ public class BiddingController : ControllerBase
 
     [Authorize]
     [HttpPost("start/{pollId}")]
-    public async Task<IActionResult> StartBidding(string pollId)
+    public async Task<IActionResult> StartQuestion(string pollId, [FromBody] StartQuestionRequest request)
     {
+        if (string.IsNullOrWhiteSpace(request.Cohort))
+            return BadRequest(new { error = "Cohort is required" });
+
         try
         {
-            await _biddingService.StartBiddingAsync(pollId);
-            return Ok(new { message = "Bidding started" });
+            await _biddingService.StartQuestionAsync(pollId, request.QuestionIndex, request.Cohort);
+            return Ok(new { message = "Question bidding started" });
         }
         catch (NotFoundException ex)
         {
             return NotFound(new { error = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
         }
     }
 
@@ -180,16 +174,18 @@ public class BiddingController : ControllerBase
     }
 
     [AllowAnonymous]
-    [HttpPost("lock-in/{pollId}")]
-    public async Task<IActionResult> LockIn(string pollId, [FromBody] LockInRequest request)
+    [HttpPost("bid/{pollId}")]
+    public async Task<IActionResult> PlaceBid(string pollId, [FromBody] PlaceBidRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.SessionId))
             return BadRequest(new { error = "SessionId is required" });
+        if (string.IsNullOrWhiteSpace(request.Cohort))
+            return BadRequest(new { error = "Cohort is required" });
 
         try
         {
-            await _biddingService.LockInBidsAsync(pollId, request.SessionId, request.SkillIds);
-            return Ok(new { message = "Bids locked in successfully" });
+            await _biddingService.PlaceBidAsync(pollId, request);
+            return Ok(new { message = "Bid placed successfully" });
         }
         catch (NotFoundException ex)
         {

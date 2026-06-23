@@ -12,11 +12,13 @@ public class BiddingPoll
     public string CreatedByName { get; set; } = "Anonymous";
     public bool IsBiddingActive { get; set; }
     public bool BiddingClosed { get; set; }
-    public int SkillCost { get; set; } = 20;
     public string Theme { get; set; } = "synergy_sphere";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    public int ActiveQuestionIndex { get; set; } = -1;
+    public string CurrentCohort { get; set; } = string.Empty;
+
     // Navigation properties
-    public ICollection<Skill> Skills { get; set; } = new List<Skill>();
+    public ICollection<BiddingQuestion> Questions { get; set; } = new List<BiddingQuestion>();
 }

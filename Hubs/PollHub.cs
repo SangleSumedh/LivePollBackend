@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.SignalR;
 using live_poll_backend.Services;
+using live_poll_backend.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace live_poll_backend.Hubs;
 
@@ -15,15 +17,23 @@ public class PollHub : Hub
     {
         await Groups.AddToGroupAsync(Context.ConnectionId, $"poll_{pollId}");
 
-        var tracker = Context.GetHttpContext()?.RequestServices.GetRequiredService<BiddingStateTracker>();
-        if (tracker != null)
+        var serviceProvider = Context.GetHttpContext()?.RequestServices;
+        if (serviceProvider != null)
         {
-            var counts = tracker.GetCounts(pollId);
-            await Clients.Caller.SendAsync("ReceiveBubbleData", new
+            var tracker = serviceProvider.GetRequiredService<BiddingStateTracker>();
+            var db = serviceProvider.GetRequiredService<AppDbContext>();
+
+            var poll = await db.BiddingPolls.FindAsync(pollId);
+            if (poll != null && poll.ActiveQuestionIndex >= 0)
             {
-                pollId,
-                counts = counts.ToDictionary(k => k.Key.ToString(), v => v.Value)
-            });
+                var counts = tracker.GetCounts(pollId, poll.ActiveQuestionIndex);
+                await Clients.Caller.SendAsync("ReceiveBubbleData", new
+                {
+                    pollId,
+                    questionIndex = poll.ActiveQuestionIndex,
+                    counts = counts.ToDictionary(k => k.Key.ToString(), v => v.Value)
+                });
+            }
         }
     }
 
@@ -51,10 +61,10 @@ public class PollHub : Hub
         await Clients.Group($"poll_{pollId}_presenter").SendAsync("EmojiReceived", new { pollId, emoji });
     }
 
-    /// <summary>Notify server of an ephemeral selection change from a participant.</summary>
-    public void NotifySelectionChange(string pollId, string sessionId, int skillId, bool isSelected)
+    /// <summary>Notify server of an ephemeral selection change (bid) from a participant.</summary>
+    public void NotifyBidChange(string pollId, int questionIndex, string sessionId, int biddingSkillId, int amount)
     {
         var tracker = Context.GetHttpContext()?.RequestServices.GetRequiredService<BiddingStateTracker>();
-        tracker?.UpdateSelection(pollId, sessionId, skillId, isSelected);
+        tracker?.UpdateBid(pollId, questionIndex, sessionId, biddingSkillId, amount);
     }
 }
