@@ -379,8 +379,8 @@ public class BiddingService : IBiddingService
         if (cohortBids.Any(b => b.IsCommitted))
             throw new InvalidOperationException("Bidding is already closed/committed for this cohort.");
 
-        // Gate 3: Budget check: SUM(CoinsSpent across ALL questions) + newAmount <= 100
-        // Get user's current bids for this question from the state tracker (before updating it to check total budget)
+        // Gate 3: Budget check: SUM(CoinsSpent on the CURRENT question) <= 10
+        // Get user's current bids for this question from the state tracker
         var userActiveQMemoryBids = _stateTracker.GetUserBidsForQuestion(pollId, request.QuestionIndex, request.SessionId);
         
         // Sum of other skills in this active question (excluding the one being updated)
@@ -388,14 +388,9 @@ public class BiddingService : IBiddingService
             .Where(b => b.Key != request.BiddingSkillId)
             .Sum(b => b.Value);
 
-        // Sum of bids in other questions in database
-        var otherQuestionsDbSum = cohortBids
-            .Where(b => b.SessionId == request.SessionId && b.QuestionIndex != request.QuestionIndex)
-            .Sum(b => b.CoinsSpent);
-
-        var totalProposedBudget = otherQuestionsDbSum + currentQOtherSkillsSum + request.CoinsSpent;
-        if (totalProposedBudget > 100)
-            throw new InvalidOperationException($"Insufficient coins. This bid would bring your total to {totalProposedBudget} coins, but your maximum budget is 100.");
+        var totalProposedQBudget = currentQOtherSkillsSum + request.CoinsSpent;
+        if (totalProposedQBudget > 10)
+            throw new InvalidOperationException($"Insufficient coins. This bid would bring your total for this question to {totalProposedQBudget} coins, but your maximum budget per question is 10.");
 
         // Safe to update the state tracker
         _stateTracker.UpdateBid(pollId, request.QuestionIndex, request.SessionId, request.BiddingSkillId, request.CoinsSpent);
