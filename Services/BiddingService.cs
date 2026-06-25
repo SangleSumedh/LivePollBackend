@@ -371,12 +371,7 @@ public class BiddingService : IBiddingService
         if (skill == null || skill.BiddingQuestion == null || skill.BiddingQuestion.BiddingPollId != pollId || skill.BiddingQuestion.Index != request.QuestionIndex)
             throw new InvalidOperationException("Invalid skill specified for this question.");
 
-        // Check if cohort bidding is closed (if any committed bids exist for this cohort)
-        var cohortBids = await _db.SkillBids
-            .Where(b => b.BiddingPollId == pollId && b.Cohort == request.Cohort)
-            .ToListAsync();
-
-        if (cohortBids.Any(b => b.IsCommitted))
+        if (poll.BiddingClosed && poll.CurrentCohort == request.Cohort)
             throw new InvalidOperationException("Bidding is already closed/committed for this cohort.");
 
         // Gate 3: Budget check: SUM(CoinsSpent on the CURRENT question) <= 10
@@ -394,6 +389,44 @@ public class BiddingService : IBiddingService
 
         // Safe to update the state tracker
         _stateTracker.UpdateBid(pollId, request.QuestionIndex, request.SessionId, request.BiddingSkillId, request.CoinsSpent);
+
+        // Sync with DB immediately to persist the bid as committed
+        var existingBid = await _db.SkillBids
+            .FirstOrDefaultAsync(b => b.BiddingPollId == pollId 
+                                   && b.SessionId == request.SessionId 
+                                   && b.Cohort == request.Cohort 
+                                   && b.QuestionIndex == request.QuestionIndex 
+                                   && b.BiddingSkillId == request.BiddingSkillId);
+
+        if (request.CoinsSpent <= 0)
+        {
+            if (existingBid != null)
+            {
+                _db.SkillBids.Remove(existingBid);
+            }
+        }
+        else
+        {
+            if (existingBid != null)
+            {
+                existingBid.CoinsSpent = request.CoinsSpent;
+                existingBid.IsCommitted = true;
+            }
+            else
+            {
+                _db.SkillBids.Add(new SkillBid
+                {
+                    BiddingPollId = pollId,
+                    BiddingSkillId = request.BiddingSkillId,
+                    SessionId = request.SessionId,
+                    Cohort = request.Cohort,
+                    CoinsSpent = request.CoinsSpent,
+                    QuestionIndex = request.QuestionIndex,
+                    IsCommitted = true
+                });
+            }
+        }
+        await _db.SaveChangesAsync();
     }
 
     public async Task<BiddingPollResponse> CloneBiddingPollAsync(string pollId, string userId, string userEmail, string userName)

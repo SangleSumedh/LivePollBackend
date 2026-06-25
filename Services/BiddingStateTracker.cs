@@ -66,6 +66,7 @@ public class BiddingStateTracker
         var key = (pollId, questionIndex);
 
         // 1. Load committed bids from DB
+        var committedSessions = new HashSet<string>();
         using (var scope = _scopeFactory.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -75,6 +76,7 @@ public class BiddingStateTracker
 
             foreach (var bid in dbBids)
             {
+                committedSessions.Add(bid.SessionId);
                 if (result.ContainsKey(bid.BiddingSkillId))
                     result[bid.BiddingSkillId] += bid.CoinsSpent;
                 else
@@ -82,11 +84,16 @@ public class BiddingStateTracker
             }
         }
 
-        // 2. Add current in-memory bids for active users
+        // 2. Add current in-memory bids for active users (only if they are NOT committed in the DB)
         if (_ephemeralSelections.TryGetValue(key, out var qMap))
         {
             foreach (var userPair in qMap)
             {
+                var sessionId = userPair.Key;
+                // Avoid double counting by skipping sessions that already have committed bids in the DB
+                if (committedSessions.Contains(sessionId))
+                    continue;
+
                 foreach (var bidPair in userPair.Value)
                 {
                     var skillId = bidPair.Key;

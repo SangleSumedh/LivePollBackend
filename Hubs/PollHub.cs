@@ -57,7 +57,7 @@ public class PollHub : Hub
             if (!string.IsNullOrEmpty(sessionId) && !tracker.HasSessionData(pollId, sessionId))
             {
                 var dbBids = await db.SkillBids
-                    .Where(b => b.BiddingPollId == pollId && b.SessionId == sessionId && !b.IsCommitted)
+                    .Where(b => b.BiddingPollId == pollId && b.SessionId == sessionId)
                     .ToListAsync();
                 foreach (var bid in dbBids)
                 {
