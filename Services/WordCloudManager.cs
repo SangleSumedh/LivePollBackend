@@ -208,6 +208,23 @@ public class WordCloudManager : IHostedService, IDisposable
             .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
     }
 
+    private static readonly Regex ProfanityRegex = new(
+        @"\b(fuck|shit|ass|bitch|cunt|dick|bastard|piss|crap|damn|chutiya|chutya|bhenchod|behenchod|bhanchod|bchod|madarchod|mchod|gaand|gand|laund|lauda|lavda|saala|sala|kamine|kamina|harami|randi|bhosdike|bhosdika)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex ConsonantsRegex = new(
+        @"[bcdfghjklmnpqrstvwxz]{5,}",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex RepeatedCharsRegex = new(
+        @"(.)\1\1",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly HashSet<string> AcronymWhitelist = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "html", "css", "sql", "aws", "gcp", "rest", "api", "jwt", "uuid", "json", "yaml", "php", "grpc", "http", "scss", "crdt", "xml"
+    };
+
     /// <summary>
     /// Sanitizes raw user input: converts to lowercase and removes punctuation.
     /// </summary>
@@ -219,6 +236,38 @@ public class WordCloudManager : IHostedService, IDisposable
         if (trimmed.Length > 50)
         {
             trimmed = trimmed.Substring(0, 50).Trim();
+        }
+
+        // 1. Profanity check (case-insensitive with word boundaries)
+        if (ProfanityRegex.IsMatch(trimmed))
+        {
+            return new List<string>();
+        }
+
+        // 2. Gibberish check: consecutive identical characters
+        if (RepeatedCharsRegex.IsMatch(trimmed))
+        {
+            return new List<string>();
+        }
+
+        // 3. Gibberish check: 5 or more consecutive consonants (letters only)
+        if (ConsonantsRegex.IsMatch(trimmed))
+        {
+            return new List<string>();
+        }
+
+        // 4. Gibberish check: Vowel check only if single-word input (no spaces)
+        if (!trimmed.Contains(' ') && trimmed.Length > 3)
+        {
+            bool hasVowels = Regex.IsMatch(trimmed, @"[aeiouyAEIOUY]");
+            if (!hasVowels)
+            {
+                bool isAllUpper = trimmed.All(c => !char.IsLetter(c) || char.IsUpper(c));
+                if (!isAllUpper && !AcronymWhitelist.Contains(trimmed))
+                {
+                    return new List<string>();
+                }
+            }
         }
 
         return new List<string> { trimmed };
