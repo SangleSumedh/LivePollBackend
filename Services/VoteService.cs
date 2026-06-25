@@ -14,12 +14,14 @@ public class VoteService : IVoteService
     private readonly AppDbContext _db;
     private readonly IHubContext<PollHub> _hubContext;
     private readonly WordCloudManager _wordCloudManager;
+    private readonly IVoteStateTracker _voteTracker;
 
-    public VoteService(AppDbContext db, IHubContext<PollHub> hubContext, WordCloudManager wordCloudManager)
+    public VoteService(AppDbContext db, IHubContext<PollHub> hubContext, WordCloudManager wordCloudManager, IVoteStateTracker voteTracker)
     {
         _db = db;
         _hubContext = hubContext;
         _wordCloudManager = wordCloudManager;
+        _voteTracker = voteTracker;
     }
 
     public async Task<int?> CheckVoteStatusAsync(string pollId, int questionIndex, string sessionId)
@@ -27,12 +29,7 @@ public class VoteService : IVoteService
         if (string.IsNullOrWhiteSpace(pollId) || questionIndex < 0 || string.IsNullOrWhiteSpace(sessionId))
             return null;
 
-        var vote = await _db.Votes
-            .Where(v => v.PollId == pollId && v.QuestionIndex == questionIndex && v.SessionId == sessionId)
-            .Select(v => v.OptionIndex)
-            .FirstOrDefaultAsync();
-
-        return vote;
+        return await _voteTracker.CheckVoteStatusAsync(pollId, questionIndex, sessionId);
     }
 
     public async Task CastVoteAsync(string pollId, VoteRequest request)
@@ -54,82 +51,33 @@ public class VoteService : IVoteService
         if (question == null)
             throw new NotFoundException($"Question index {request.QuestionIndex} not found in poll '{pollId}'");
 
-        using var transaction = await _db.Database.BeginTransactionAsync();
+        // DB / Tracker duplicate vote check (prevent double voting)
+        var existingVote = await _voteTracker.CheckVoteStatusAsync(pollId, request.QuestionIndex, request.SessionId);
+        if (existingVote.HasValue)
+            throw new DuplicateVoteException();
 
-        try
+        if (question.Type == QuestionType.WordCloud)
         {
-            // DB uniqueness check (source of truth to prevent double voting)
-            var existingVote = await _db.Votes
-                .AnyAsync(v => v.PollId == pollId && v.QuestionIndex == request.QuestionIndex && v.SessionId == request.SessionId);
+            // Validate WordCloud submission
+            if (string.IsNullOrWhiteSpace(request.Text))
+                throw new InvalidOperationException("Text input is required for word cloud questions");
 
-            if (existingVote)
-                throw new DuplicateVoteException();
+            if (request.Text.Length > 50)
+                throw new InvalidOperationException("Submitted text exceeds maximum length of 50 characters");
 
-            if (question.Type == QuestionType.WordCloud)
-            {
-                // Validate WordCloud submission
-                if (string.IsNullOrWhiteSpace(request.Text))
-                    throw new InvalidOperationException("Text input is required for word cloud questions");
+            // Record vote in tracker (will flush to DB)
+            _voteTracker.RecordVote(pollId, request);
 
-                if (request.Text.Length > 50)
-                    throw new InvalidOperationException("Submitted text exceeds maximum length of 50 characters");
-
-                // Insert vote
-                _db.Votes.Add(new Vote
-                {
-                    PollId = pollId,
-                    QuestionIndex = request.QuestionIndex,
-                    OptionIndex = null,
-                    SubmittedText = request.Text.Trim(),
-                    SessionId = request.SessionId,
-                    VotedAt = DateTime.UtcNow
-                });
-
-                await _db.SaveChangesAsync();
-                await transaction.CommitAsync();
-
-                // Pass to the in-memory manager for sanitization and processing
-                _wordCloudManager.RecordSubmission(pollId, request.QuestionIndex, request.Text);
-            }
-            else
-            {
-                if (!request.OptionIndex.HasValue)
-                    throw new InvalidOperationException("OptionIndex is required for multiple choice questions");
-
-                // Insert vote
-                _db.Votes.Add(new Vote
-                {
-                    PollId = pollId,
-                    QuestionIndex = request.QuestionIndex,
-                    OptionIndex = request.OptionIndex.Value,
-                    SessionId = request.SessionId,
-                    VotedAt = DateTime.UtcNow
-                });
-
-                await _db.SaveChangesAsync();
-
-                // Atomic Upsert vote count in DB to avoid lock-upgrade deadlocks under high concurrency
-                await _db.Database.ExecuteSqlInterpolatedAsync(
-                    $@"INSERT INTO ""VoteCounts"" (""PollId"", ""QuestionIndex"", ""OptionIndex"", ""Count"")
-                      VALUES ({pollId}, {request.QuestionIndex}, {request.OptionIndex.Value}, 1)
-                      ON CONFLICT (""PollId"", ""QuestionIndex"", ""OptionIndex"")
-                      DO UPDATE SET ""Count"" = ""VoteCounts"".""Count"" + 1");
-
-                await transaction.CommitAsync();
-
-                // Broadcast updated vote counts to all poll listeners (Only for MultipleChoice; WordCloud broadcasts via background Timer)
-                var voteCounts = await _db.VoteCounts
-                    .Where(vc => vc.PollId == pollId)
-                    .ToDictionaryAsync(vc => $"{vc.QuestionIndex}_{vc.OptionIndex}", vc => vc.Count);
-
-                await _hubContext.Clients.Group($"poll_{pollId}")
-                    .SendAsync("VoteCountsUpdated", new { pollId, voteCounts });
-            }
+            // Pass to the in-memory manager for sanitization and processing
+            _wordCloudManager.RecordSubmission(pollId, request.QuestionIndex, request.Text);
         }
-        catch
+        else
         {
-            await transaction.RollbackAsync();
-            throw;
+            if (!request.OptionIndex.HasValue)
+                throw new InvalidOperationException("OptionIndex is required for multiple choice questions");
+
+            // Record vote in tracker (will flush to DB and trigger debounced broadcast)
+            _voteTracker.RecordVote(pollId, request);
         }
     }
 }

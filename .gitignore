@@ -6,4 +6,18 @@ publish/
 *.suo
 .vs/
 
+docs/perf-test
+
 appsettings.Development.json
+
+# Jest & performance test scripts
+node_modules/
+coverage/
+*.test.js
+*.test.jsx
+*.spec.js
+*.spec.jsx
+jest.config.js
+jest.config.ts
+
+

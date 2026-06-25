@@ -25,6 +25,9 @@ public class BiddingStateTracker
     // Timer for 2-minute DB flush
     private readonly System.Timers.Timer _flushTimer;
  
+    // Cache for committed counts from DB: (pollId, questionIndex) -> (biddingSkillId -> coinsSpent)
+    private readonly ConcurrentDictionary<(string PollId, int QuestionIndex), ConcurrentDictionary<int, int>> _committedCountsCache = new();
+
     public BiddingStateTracker(IHubContext<PollHub> hubContext, IServiceScopeFactory scopeFactory)
     {
         _hubContext = hubContext;
@@ -65,23 +68,43 @@ public class BiddingStateTracker
         var result = new Dictionary<int, int>();
         var key = (pollId, questionIndex);
 
-        // 1. Load committed bids from DB
+        // 1. Get committed counts (from memory cache or load from DB on miss)
+        var committed = _committedCountsCache.GetOrAdd(key, k =>
+        {
+            var cacheDict = new ConcurrentDictionary<int, int>();
+            using (var scope = _scopeFactory.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var dbBids = db.SkillBids
+                    .Where(b => b.BiddingPollId == pollId && b.QuestionIndex == questionIndex && b.IsCommitted)
+                    .ToList();
+
+                foreach (var bid in dbBids)
+                {
+                    cacheDict.AddOrUpdate(bid.BiddingSkillId, bid.CoinsSpent, (_, existing) => existing + bid.CoinsSpent);
+                }
+            }
+            return cacheDict;
+        });
+
+        foreach (var kvp in committed)
+        {
+            result[kvp.Key] = kvp.Value;
+        }
+
+        // We still need to filter out ephemeral bids for users who have already committed bids.
+        // Let's load the committed sessionIds. To avoid querying DB, we only query when needed, or query once.
+        // Since committedSessions is only used to exclude duplicate ephemeral entries, we can fetch it.
         var committedSessions = new HashSet<string>();
         using (var scope = _scopeFactory.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var dbBids = db.SkillBids
+            var sessions = db.SkillBids
                 .Where(b => b.BiddingPollId == pollId && b.QuestionIndex == questionIndex && b.IsCommitted)
+                .Select(b => b.SessionId)
+                .Distinct()
                 .ToList();
-
-            foreach (var bid in dbBids)
-            {
-                committedSessions.Add(bid.SessionId);
-                if (result.ContainsKey(bid.BiddingSkillId))
-                    result[bid.BiddingSkillId] += bid.CoinsSpent;
-                else
-                    result[bid.BiddingSkillId] = bid.CoinsSpent;
-            }
+            foreach (var s in sessions) committedSessions.Add(s);
         }
 
         // 2. Add current in-memory bids for active users (only if they are NOT committed in the DB)
@@ -267,6 +290,12 @@ public class BiddingStateTracker
         foreach (var key in keysToRemove)
         {
             _ephemeralSelections.TryRemove(key, out _);
+        }
+
+        var cacheKeysToRemove = _committedCountsCache.Keys.Where(k => k.PollId == pollId).ToList();
+        foreach (var key in cacheKeysToRemove)
+        {
+            _committedCountsCache.TryRemove(key, out _);
         }
     }
 }

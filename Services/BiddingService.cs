@@ -389,44 +389,6 @@ public class BiddingService : IBiddingService
 
         // Safe to update the state tracker
         _stateTracker.UpdateBid(pollId, request.QuestionIndex, request.SessionId, request.BiddingSkillId, request.CoinsSpent);
-
-        // Sync with DB immediately to persist the bid as committed
-        var existingBid = await _db.SkillBids
-            .FirstOrDefaultAsync(b => b.BiddingPollId == pollId 
-                                   && b.SessionId == request.SessionId 
-                                   && b.Cohort == request.Cohort 
-                                   && b.QuestionIndex == request.QuestionIndex 
-                                   && b.BiddingSkillId == request.BiddingSkillId);
-
-        if (request.CoinsSpent <= 0)
-        {
-            if (existingBid != null)
-            {
-                _db.SkillBids.Remove(existingBid);
-            }
-        }
-        else
-        {
-            if (existingBid != null)
-            {
-                existingBid.CoinsSpent = request.CoinsSpent;
-                existingBid.IsCommitted = true;
-            }
-            else
-            {
-                _db.SkillBids.Add(new SkillBid
-                {
-                    BiddingPollId = pollId,
-                    BiddingSkillId = request.BiddingSkillId,
-                    SessionId = request.SessionId,
-                    Cohort = request.Cohort,
-                    CoinsSpent = request.CoinsSpent,
-                    QuestionIndex = request.QuestionIndex,
-                    IsCommitted = true
-                });
-            }
-        }
-        await _db.SaveChangesAsync();
     }
 
     public async Task<BiddingPollResponse> CloneBiddingPollAsync(string pollId, string userId, string userEmail, string userName)

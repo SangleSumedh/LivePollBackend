@@ -14,12 +14,14 @@ public class PollService : IPollService
     private readonly AppDbContext _db;
     private readonly IHubContext<PollHub> _hubContext;
     private readonly WordCloudManager _wordCloudManager;
+    private readonly IVoteStateTracker _voteTracker;
 
-    public PollService(AppDbContext db, IHubContext<PollHub> hubContext, WordCloudManager wordCloudManager)
+    public PollService(AppDbContext db, IHubContext<PollHub> hubContext, WordCloudManager wordCloudManager, IVoteStateTracker voteTracker)
     {
         _db = db;
         _hubContext = hubContext;
         _wordCloudManager = wordCloudManager;
+        _voteTracker = voteTracker;
     }
 
     public async Task<List<PollResponse>> GetPollsAsync(string userId)
@@ -255,6 +257,8 @@ public class PollService : IPollService
         if (poll == null)
             throw new NotFoundException($"Poll '{pollId}' not found");
 
+        _voteTracker.ClearPoll(pollId);
+
         // 1. Invalidate in-memory word cloud caches first to prevent concurrent submission ghost writes
         foreach (var q in poll.Questions.Where(q => q.Type == QuestionType.WordCloud))
         {
@@ -306,6 +310,8 @@ public class PollService : IPollService
         if (poll == null)
             throw new NotFoundException($"Poll '{pollId}' not found");
 
+        await _voteTracker.FlushToDatabaseAsync(pollId);
+
         poll.CurrentQuestionActive = false;
         poll.UpdatedAt = DateTime.UtcNow;
 
@@ -319,6 +325,8 @@ public class PollService : IPollService
         var poll = await _db.Polls.FindAsync(pollId);
         if (poll == null)
             throw new NotFoundException($"Poll '{pollId}' not found");
+
+        await _voteTracker.FlushToDatabaseAsync(pollId);
 
         poll.ActiveQuestionIndex += 1;
         poll.CurrentQuestionActive = false;
@@ -335,6 +343,8 @@ public class PollService : IPollService
         if (poll == null)
             throw new NotFoundException($"Poll '{pollId}' not found");
 
+        await _voteTracker.FlushToDatabaseAsync(pollId);
+
         poll.ActiveQuestionIndex -= 1;
         poll.CurrentQuestionActive = false;
         poll.UpdatedAt = DateTime.UtcNow;
@@ -349,6 +359,8 @@ public class PollService : IPollService
         var poll = await _db.Polls.FindAsync(pollId);
         if (poll == null)
             throw new NotFoundException($"Poll '{pollId}' not found");
+
+        await _voteTracker.FlushToDatabaseAsync(pollId);
 
         poll.Status = PollStatus.Ended;
         poll.CurrentQuestionActive = false;

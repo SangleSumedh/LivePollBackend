@@ -21,6 +21,7 @@ builder.Services.AddScoped<IVoteService, VoteService>();
 builder.Services.AddSingleton<WordCloudManager>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<WordCloudManager>());
 builder.Services.AddSingleton<BiddingStateTracker>();
+builder.Services.AddSingleton<IVoteStateTracker, VoteStateTracker>();
 builder.Services.AddScoped<IBiddingService, BiddingService>();
 
 // ── JWT Authentication ──
