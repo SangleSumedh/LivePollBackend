@@ -309,6 +309,19 @@ public class BiddingService : IBiddingService
             cohort,
             questionText = currentQuestion?.Text ?? ""
         });
+
+        // Immediately broadcast existing bubble counts for the activated question
+        // so the presenter sees already-collected coin data without waiting for new bids
+        var existingCounts = _stateTracker.GetCounts(pollId, questionIndex);
+        if (existingCounts.Count > 0)
+        {
+            await _hubContext.Clients.Group($"poll_{pollId}").SendAsync("ReceiveBubbleData", new
+            {
+                pollId,
+                questionIndex,
+                counts = existingCounts.ToDictionary(k => k.Key.ToString(), v => v.Value)
+            });
+        }
     }
 
     public async Task StopBiddingAsync(string pollId)

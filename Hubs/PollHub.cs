@@ -66,15 +66,39 @@ public class PollHub : Hub
             }
 
             var poll = await db.BiddingPolls.FindAsync(pollId);
-            if (poll != null && poll.ActiveQuestionIndex >= 0)
+            if (poll != null)
             {
-                var counts = tracker.GetCounts(pollId, poll.ActiveQuestionIndex);
-                await Clients.Caller.SendAsync("ReceiveBubbleData", new
+                if (poll.ActiveQuestionIndex >= 0)
                 {
-                    pollId,
-                    questionIndex = poll.ActiveQuestionIndex,
-                    counts = counts.ToDictionary(k => k.Key.ToString(), v => v.Value)
-                });
+                    await Clients.Caller.SendAsync("QuestionActivated", new
+                    {
+                        pollId,
+                        questionIndex = poll.ActiveQuestionIndex,
+                        cohort = poll.CurrentCohort
+                    });
+
+                    var counts = tracker.GetCounts(pollId, poll.ActiveQuestionIndex);
+                    await Clients.Caller.SendAsync("ReceiveBubbleData", new
+                    {
+                        pollId,
+                        questionIndex = poll.ActiveQuestionIndex,
+                        counts = counts.ToDictionary(k => k.Key.ToString(), v => v.Value)
+                    });
+                }
+            }
+            else
+            {
+                var normalPoll = await db.Polls.FindAsync(pollId);
+                if (normalPoll != null)
+                {
+                    await Clients.Caller.SendAsync("PollUpdated", new
+                    {
+                        pollId,
+                        status = normalPoll.Status.ToString().ToLower(),
+                        activeQuestionIndex = normalPoll.ActiveQuestionIndex,
+                        currentQuestionActive = normalPoll.CurrentQuestionActive
+                    });
+                }
             }
         }
     }
