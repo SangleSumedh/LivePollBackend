@@ -232,4 +232,19 @@ public class PollsController : ControllerBase
             return BadRequest(new { error = ex.Message });
         }
     }
+
+    [AllowAnonymous]
+    [HttpGet("{pollId}/export")]
+    public async Task<IActionResult> ExportPoll(string pollId)
+    {
+        try
+        {
+            var csvBytes = await _pollService.ExportPollDataAsync(pollId);
+            return File(csvBytes, "text/csv", $"poll-{pollId}-export.csv");
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
 }

@@ -15,4 +15,5 @@ public interface IPollService
     Task NextQuestionAsync(string pollId);
     Task PrevQuestionAsync(string pollId);
     Task EndPollAsync(string pollId);
+    Task<byte[]> ExportPollDataAsync(string pollId);
 }

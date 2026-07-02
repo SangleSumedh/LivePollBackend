@@ -446,6 +446,92 @@ public class PollService : IPollService
         return id;
     }
 
+    public async Task<byte[]> ExportPollDataAsync(string pollId)
+    {
+        // 1. Flush pending in-memory votes to the database
+        await _voteTracker.FlushToDatabaseAsync(pollId);
+
+        // 2. Fetch the poll with questions, options, and votes
+        var poll = await _db.Polls
+            .Include(p => p.Questions.OrderBy(q => q.Index))
+                .ThenInclude(q => q.Options.OrderBy(o => o.Index))
+            .Include(p => p.Votes)
+            .FirstOrDefaultAsync(p => p.Id == pollId);
+
+        if (poll == null)
+            throw new NotFoundException($"Poll '{pollId}' not found");
+
+        using (var memoryStream = new System.IO.MemoryStream())
+        using (var writer = new System.IO.StreamWriter(memoryStream, System.Text.Encoding.UTF8))
+        {
+            // Write CSV Header
+            await writer.WriteLineAsync("Poll ID,Poll Title,Theme,Question Index,Question Text,Question Type,Option Index,Option Text,Voter Session ID,Submitted Text,Voted At");
+
+            foreach (var question in poll.Questions)
+            {
+                var questionVotes = poll.Votes
+                    .Where(v => v.QuestionIndex == question.Index)
+                    .OrderBy(v => v.VotedAt)
+                    .ToList();
+
+                if (questionVotes.Count == 0)
+                {
+                    // If no votes, write a row containing only the question details
+                    var row = $"{EscapeCsvField(poll.Id)}," +
+                              $"{EscapeCsvField(poll.Title)}," +
+                              $"{EscapeCsvField(poll.Theme)}," +
+                              $"{question.Index + 1}," +
+                              $"{EscapeCsvField(question.Text)}," +
+                              $"{EscapeCsvField(question.Type.ToString())}," +
+                              ",,,,,"; // Option Index, Option Text, Voter Session ID, Submitted Text, Voted At are empty
+                    await writer.WriteLineAsync(row);
+                }
+                else
+                {
+                    foreach (var vote in questionVotes)
+                    {
+                        string optionIndexStr = vote.OptionIndex.HasValue ? (vote.OptionIndex.Value + 1).ToString() : "";
+                        string optionText = "";
+                        if (vote.OptionIndex.HasValue)
+                        {
+                            var option = question.Options.FirstOrDefault(o => o.Index == vote.OptionIndex.Value);
+                            if (option != null)
+                            {
+                                optionText = option.Text;
+                            }
+                        }
+
+                        var row = $"{EscapeCsvField(poll.Id)}," +
+                                  $"{EscapeCsvField(poll.Title)}," +
+                                  $"{EscapeCsvField(poll.Theme)}," +
+                                  $"{question.Index + 1}," +
+                                  $"{EscapeCsvField(question.Text)}," +
+                                  $"{EscapeCsvField(question.Type.ToString())}," +
+                                  $"{EscapeCsvField(optionIndexStr)}," +
+                                  $"{EscapeCsvField(optionText)}," +
+                                  $"{EscapeCsvField(vote.SessionId)}," +
+                                  $"{EscapeCsvField(vote.SubmittedText ?? "")}," +
+                                  $"{EscapeCsvField(vote.VotedAt.ToString("o"))}";
+                        await writer.WriteLineAsync(row);
+                    }
+                }
+            }
+
+            await writer.FlushAsync();
+            return memoryStream.ToArray();
+        }
+    }
+
+    private string EscapeCsvField(string field)
+    {
+        if (string.IsNullOrEmpty(field)) return string.Empty;
+        if (field.Contains(",") || field.Contains("\"") || field.Contains("\n") || field.Contains("\r"))
+        {
+            return $"\"{field.Replace("\"", "\"\"")}\"";
+        }
+        return field;
+    }
+
     private async Task BroadcastPollUpdated(PollResponse response)
     {
         await BroadcastToGroup(response.Id, "PollUpdated", response);
