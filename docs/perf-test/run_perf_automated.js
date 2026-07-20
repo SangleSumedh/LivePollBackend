@@ -207,6 +207,9 @@ async function run() {
   if (biddingPollId) {
     perfArgs.push("--biddingPollId", biddingPollId);
   }
+  if (token) {
+    perfArgs.push("--adminToken", token);
+  }
 
   const testProcess = spawn("node", perfArgs, { stdio: "inherit" });
 
