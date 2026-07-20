@@ -90,7 +90,7 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHub<PollHub>("/hubs/poll");
-
+//test
 // Auto-apply migrations on startup (development convenience)
 using (var scope = app.Services.CreateScope())
 {
