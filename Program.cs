@@ -8,6 +8,7 @@ using live_poll_backend.Exceptions;
 using live_poll_backend.Hubs;
 using live_poll_backend.Services;
 
+ThreadPool.SetMinThreads(200, 200);
 var builder = WebApplication.CreateBuilder(args);
 
 // ── Database ──

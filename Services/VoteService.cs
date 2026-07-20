@@ -34,29 +34,23 @@ public class VoteService : IVoteService
 
     public async Task CastVoteAsync(string pollId, VoteRequest request)
     {
-        // Validate poll exists
-        var poll = await _db.Polls.FindAsync(pollId);
-        if (poll == null)
+        // 1. Get cached poll/question state
+        var state = await _voteTracker.GetActivePollStateAsync(pollId);
+        if (state == null)
             throw new NotFoundException($"Poll '{pollId}' not found");
 
-        if (!poll.CurrentQuestionActive)
+        if (!state.IsActive)
             throw new InvalidOperationException("Voting is not currently active on this question");
 
-        if (request.QuestionIndex != poll.ActiveQuestionIndex)
+        if (request.QuestionIndex != state.ActiveQuestionIndex)
             throw new InvalidOperationException("The specified question is not the active question");
 
-        // Load the question to check its type
-        var question = await _db.Questions
-            .FirstOrDefaultAsync(q => q.PollId == pollId && q.Index == request.QuestionIndex);
-        if (question == null)
-            throw new NotFoundException($"Question index {request.QuestionIndex} not found in poll '{pollId}'");
-
-        // DB / Tracker duplicate vote check (prevent double voting)
+        // 2. DB / Tracker duplicate vote check (prevent double voting)
         var existingVote = await _voteTracker.CheckVoteStatusAsync(pollId, request.QuestionIndex, request.SessionId);
         if (existingVote.HasValue)
             throw new DuplicateVoteException();
 
-        if (question.Type == QuestionType.WordCloud)
+        if (state.QuestionType == QuestionType.WordCloud)
         {
             // Validate WordCloud submission
             if (string.IsNullOrWhiteSpace(request.Text))

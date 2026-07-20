@@ -1,0 +1,17 @@
+{
+  "name": "livepoll-perf-test",
+  "version": "1.0.0",
+  "description": "Performance test suite for LivePoll SignalR backend — simulates 150 concurrent socket connections",
+  "type": "module",
+  "scripts": {
+    "test": "node perf_test.js",
+    "test:normal": "node perf_test.js --mode normal",
+    "test:bidding": "node perf_test.js --mode bidding",
+    "test:both": "node perf_test.js --mode both"
+  },
+  "dependencies": {
+    "@microsoft/signalr": "^10.0.0",
+    "node-fetch": "^3.3.2",
+    "pg": "^8.22.0"
+  }
+}

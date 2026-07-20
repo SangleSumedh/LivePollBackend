@@ -6,7 +6,6 @@ publish/
 *.suo
 .vs/
 
-docs/perf-test
 
 appsettings.Development.json
 

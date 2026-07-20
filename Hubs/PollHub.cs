@@ -43,6 +43,7 @@ public class PollHub : Hub
         if (serviceProvider != null)
         {
             var tracker = serviceProvider.GetRequiredService<BiddingStateTracker>();
+            var voteTracker = serviceProvider.GetRequiredService<IVoteStateTracker>();
             var db = serviceProvider.GetRequiredService<AppDbContext>();
 
             // Track this connection for cleanup on disconnect
@@ -51,52 +52,57 @@ public class PollHub : Hub
                 _connections[Context.ConnectionId] = (pollId, sessionId);
             }
 
-            // Only load uncommitted bids from DB if the session has NO ephemeral data in the tracker.
-            // The tracker always has the most recent data (updated on every stepper change).
-            // Loading stale DB data would overwrite the user's current in-memory bids.
-            if (!string.IsNullOrEmpty(sessionId) && !tracker.HasSessionData(pollId, sessionId))
+            var kind = await voteTracker.GetPollKindAsync(pollId);
+
+            if (kind == PollKind.Bidding)
             {
-                var dbBids = await db.SkillBids
-                    .Where(b => b.BiddingPollId == pollId && b.SessionId == sessionId)
-                    .ToListAsync();
-                foreach (var bid in dbBids)
+                // Only load uncommitted bids from DB if the session has NO ephemeral data in the tracker.
+                // The tracker always has the most recent data (updated on every stepper change).
+                // Loading stale DB data would overwrite the user's current in-memory bids.
+                if (!string.IsNullOrEmpty(sessionId) && !tracker.HasSessionData(pollId, sessionId))
                 {
-                    tracker.UpdateBid(pollId, bid.QuestionIndex, sessionId, bid.BiddingSkillId, bid.CoinsSpent);
+                    var dbBids = await db.SkillBids
+                        .Where(b => b.BiddingPollId == pollId && b.SessionId == sessionId)
+                        .ToListAsync();
+                    foreach (var bid in dbBids)
+                    {
+                        tracker.UpdateBid(pollId, bid.QuestionIndex, sessionId, bid.BiddingSkillId, bid.CoinsSpent);
+                    }
+                }
+
+                var poll = await db.BiddingPolls.FindAsync(pollId);
+                if (poll != null)
+                {
+                    if (poll.ActiveQuestionIndex >= 0)
+                    {
+                        await Clients.Caller.SendAsync("QuestionActivated", new
+                        {
+                            pollId,
+                            questionIndex = poll.ActiveQuestionIndex,
+                            cohort = poll.CurrentCohort
+                        });
+
+                        var counts = tracker.GetCounts(pollId, poll.ActiveQuestionIndex);
+                        await Clients.Caller.SendAsync("ReceiveBubbleData", new
+                        {
+                            pollId,
+                            questionIndex = poll.ActiveQuestionIndex,
+                            counts = counts.ToDictionary(k => k.Key.ToString(), v => v.Value)
+                        });
+                    }
                 }
             }
-
-            var poll = await db.BiddingPolls.FindAsync(pollId);
-            if (poll != null)
+            else if (kind == PollKind.Normal)
             {
-                if (poll.ActiveQuestionIndex >= 0)
-                {
-                    await Clients.Caller.SendAsync("QuestionActivated", new
-                    {
-                        pollId,
-                        questionIndex = poll.ActiveQuestionIndex,
-                        cohort = poll.CurrentCohort
-                    });
-
-                    var counts = tracker.GetCounts(pollId, poll.ActiveQuestionIndex);
-                    await Clients.Caller.SendAsync("ReceiveBubbleData", new
-                    {
-                        pollId,
-                        questionIndex = poll.ActiveQuestionIndex,
-                        counts = counts.ToDictionary(k => k.Key.ToString(), v => v.Value)
-                    });
-                }
-            }
-            else
-            {
-                var normalPoll = await db.Polls.FindAsync(pollId);
-                if (normalPoll != null)
+                var state = await voteTracker.GetActivePollStateAsync(pollId);
+                if (state != null)
                 {
                     await Clients.Caller.SendAsync("PollUpdated", new
                     {
                         pollId,
-                        status = normalPoll.Status.ToString().ToLower(),
-                        activeQuestionIndex = normalPoll.ActiveQuestionIndex,
-                        currentQuestionActive = normalPoll.CurrentQuestionActive
+                        status = state.Status,
+                        activeQuestionIndex = state.ActiveQuestionIndex,
+                        currentQuestionActive = state.IsActive
                     });
                 }
             }

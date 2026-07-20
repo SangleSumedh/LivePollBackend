@@ -26,6 +26,17 @@ public class VoteStateTracker : IVoteStateTracker, IDisposable
     // Set of dirty (pollId, questionIndex) to broadcast
     private readonly ConcurrentDictionary<(string PollId, int QuestionIndex), byte> _dirtyPollQuestions = new();
 
+    // Cache of active poll states
+    private readonly ConcurrentDictionary<string, (ActivePollState State, DateTime ExpiresAt)> _activePollCache = new();
+    private readonly ConcurrentDictionary<string, Task<ActivePollState?>> _activePollQueries = new();
+
+    // Tracks if existing votes for a question have been loaded from DB
+    private readonly ConcurrentDictionary<(string PollId, int QuestionIndex), bool> _questionVotesLoaded = new();
+    private readonly ConcurrentDictionary<(string PollId, int QuestionIndex), Task> _loadingTasks = new();
+
+    // Cache of poll kind (bidding vs normal vs not found)
+    private readonly ConcurrentDictionary<string, Lazy<Task<PollKind>>> _pollKindCache = new();
+
     private readonly System.Timers.Timer _broadcastTimer;
     private readonly System.Timers.Timer _dbFlushTimer;
 
@@ -62,22 +73,105 @@ public class VoteStateTracker : IVoteStateTracker, IDisposable
     {
         var key = (pollId, questionIndex);
         
-        // 1. Check in-memory first
+        // 1. Ensure the votes list for this question is fully loaded into memory
+        if (!_questionVotesLoaded.ContainsKey(key))
+        {
+            var loadTask = _loadingTasks.GetOrAdd(key, async k =>
+            {
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                    var dbVotes = await db.Votes
+                        .Where(v => v.PollId == k.PollId && v.QuestionIndex == k.QuestionIndex)
+                        .ToListAsync();
+
+                    var questionVotes = _votes.GetOrAdd(k, _ => new ConcurrentDictionary<string, VoteRequest>());
+                    foreach (var v in dbVotes)
+                    {
+                        questionVotes.TryAdd(v.SessionId, new VoteRequest
+                        {
+                            QuestionIndex = v.QuestionIndex,
+                            OptionIndex = v.OptionIndex,
+                            SessionId = v.SessionId,
+                            Text = v.SubmittedText
+                        });
+                    }
+                    _questionVotesLoaded[k] = true;
+                }
+                finally
+                {
+                    _loadingTasks.TryRemove(k, out _);
+                }
+            });
+            await loadTask;
+        }
+
+        // 2. Check in-memory first
         if (_votes.TryGetValue(key, out var questionVotes) && questionVotes.TryGetValue(sessionId, out var vote))
         {
             return vote.OptionIndex;
         }
 
-        // 2. Fallback to database
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var dbVote = await db.Votes
-            .Where(v => v.PollId == pollId && v.QuestionIndex == questionIndex && v.SessionId == sessionId)
-            .Select(v => v.OptionIndex)
-            .FirstOrDefaultAsync();
-
-        return dbVote;
+        return null;
     }
+
+    public async Task<ActivePollState?> GetActivePollStateAsync(string pollId)
+    {
+        var now = DateTime.UtcNow;
+        if (_activePollCache.TryGetValue(pollId, out var cached) && cached.ExpiresAt > now)
+        {
+            return cached.State;
+        }
+
+        // Deduplicate concurrent database fetches
+        var fetchTask = _activePollQueries.GetOrAdd(pollId, async id =>
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var poll = await db.Polls.FindAsync(id);
+                if (poll == null) return null;
+
+                var question = await db.Questions
+                    .FirstOrDefaultAsync(q => q.PollId == id && q.Index == poll.ActiveQuestionIndex);
+                if (question == null) return null;
+
+                var state = new ActivePollState
+                {
+                    PollId = id,
+                    IsActive = poll.CurrentQuestionActive,
+                    ActiveQuestionIndex = poll.ActiveQuestionIndex,
+                    QuestionType = question.Type,
+                    Status = poll.Status.ToString().ToLower()
+                };
+
+                _activePollCache[id] = (state, DateTime.UtcNow.AddSeconds(1));
+                return state;
+            }
+            finally
+            {
+                _activePollQueries.TryRemove(id, out _);
+            }
+        });
+
+        return await fetchTask;
+    }
+
+    public Task<PollKind> GetPollKindAsync(string pollId)
+    {
+        return _pollKindCache.GetOrAdd(pollId, _ => new Lazy<Task<PollKind>>(async () =>
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            if (await db.BiddingPolls.AnyAsync(p => p.Id == pollId)) return PollKind.Bidding;
+            if (await db.Polls.AnyAsync(p => p.Id == pollId)) return PollKind.Normal;
+            return PollKind.NotFound;
+        })).Value;
+    }
+
 
     public Dictionary<string, int> GetVoteCounts(string pollId, int questionIndex)
     {
@@ -141,7 +235,10 @@ public class VoteStateTracker : IVoteStateTracker, IDisposable
         foreach (var key in keysToRemove)
         {
             _votes.TryRemove(key, out _);
+            _questionVotesLoaded.TryRemove(key, out _);
         }
+        _activePollCache.TryRemove(pollId, out _);
+        _pollKindCache.TryRemove(pollId, out _);
     }
 
     private async Task FlushForQuestionAsync(string pollId, int questionIndex)
