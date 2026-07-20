@@ -101,3 +101,14 @@ npm run test:both     # --mode both
 4. **Broadcast tracking** — Every client listens for SignalR events and measures propagation delay
 5. **Teardown** — All connections gracefully disconnected
 6. **Report** — Percentile statistics + pass/fail health checks
+
+---
+
+## ⚠️ Known Limitations & Sustained Run Harness Fix
+
+When running multi-question/sustained tests (e.g., `--actions 11`):
+1. **The Issue:** The backend validates that incoming votes match the active question index (`request.QuestionIndex == state.ActiveQuestionIndex`). If you vote on index `1` while the poll is still set to question `0`, the server rejects it with a `400 Bad Request`.
+2. **The Cause:** `run_perf_automated.js` starts the poll at index `0` once, but `perf_test.js` does not advance the poll during its loop.
+3. **The Recommended Fix:** 
+   * Thread the admin JWT token into `perf_test.js` via a new `--adminToken` CLI option from `run_perf_automated.js`.
+   * Inside the `perf_test.js` loop, make an authenticated POST to `/api/polls/{id}/start` for each `qIdx > 0` right before that question batch votes.

@@ -67,6 +67,7 @@ const CONFIG = {
   ACTION_DELAY_MS: 100,
   /** Max number of options in a normal poll question */
   OPTION_COUNT: 4,
+  ADMIN_TOKEN: "",
 };
 
 // ─── CLI Argument Parsing ───────────────────────────────────────────────────
@@ -80,6 +81,7 @@ function parseArgs() {
     clients: CONFIG.TOTAL_CLIENTS,
     actions: CONFIG.ACTIONS_PER_CLIENT,
     actionDelay: CONFIG.ACTION_DELAY_MS,
+    adminToken: "",
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--mode")           opts.mode           = args[++i];
@@ -89,12 +91,14 @@ function parseArgs() {
     if (args[i] === "--clients")        opts.clients        = parseInt(args[++i], 10);
     if (args[i] === "--actions")        opts.actions        = parseInt(args[++i], 10);
     if (args[i] === "--actionDelay")    opts.actionDelay    = parseInt(args[++i], 10);
+    if (args[i] === "--adminToken")     opts.adminToken     = args[++i];
   }
   CONFIG.API_BASE = opts.apiBase;
   CONFIG.HUB_URL  = `${opts.apiBase}/hubs/poll`;
   if (opts.clients) CONFIG.TOTAL_CLIENTS = opts.clients;
   if (opts.actions) CONFIG.ACTIONS_PER_CLIENT = opts.actions;
   if (opts.actionDelay) CONFIG.ACTION_DELAY_MS = opts.actionDelay;
+  if (opts.adminToken) CONFIG.ADMIN_TOKEN = opts.adminToken;
   return opts;
 }
 
@@ -318,6 +322,18 @@ async function runNormalPollTest(pollId) {
   for (let qIdx = 0; qIdx < questionsToVote; qIdx++) {
     const question = poll.questions[qIdx];
     const optionCount = question.options?.length ?? CONFIG.OPTION_COUNT;
+
+    // Advance the poll to this question before voting (skip for qIdx=0, already started)
+    if (qIdx > 0 && CONFIG.ADMIN_TOKEN) {
+      const startRes = await fetchJson(`${CONFIG.API_BASE}/api/polls/${pollId}/start`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${CONFIG.ADMIN_TOKEN}` },
+        body: JSON.stringify({ questionIndex: qIdx }),
+      });
+      if (!startRes.ok) {
+        console.error(`  ✗ Failed to advance poll to question index ${qIdx} — status ${startRes.status}`);
+      }
+    }
 
     // Fire all client votes for this question concurrently
     const batchPromises = pool.connections.map(async (_, clientIdx) => {
