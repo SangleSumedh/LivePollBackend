@@ -35,12 +35,16 @@ function parseArgs() {
     clients: 150,
     apiBase: DEFAULT_API_BASE,
     cleanup: true,
+    actions: 11,
+    actionDelay: 5500,
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--mode")           opts.mode    = args[++i];
     if (args[i] === "--clients")        opts.clients = parseInt(args[++i], 10);
     if (args[i] === "--apiBase")        opts.apiBase = args[++i].replace(/\/$/, "");
     if (args[i] === "--no-cleanup")     opts.cleanup = false;
+    if (args[i] === "--actions")        opts.actions = parseInt(args[++i], 10);
+    if (args[i] === "--actionDelay")    opts.actionDelay = parseInt(args[++i], 10);
   }
   return opts;
 }
@@ -101,18 +105,21 @@ async function run() {
   // 2. Create and Start Normal Poll if needed
   if (opts.mode === "normal" || opts.mode === "both") {
     console.log(`🗳️ Creating test normal poll...`);
+    const questions = [];
+    for (let i = 0; i < opts.actions; i++) {
+      questions.push({
+        text: `What is your favorite language? Question ${i + 1}`,
+        options: ["C#", "JavaScript", "Python", "Rust"]
+      });
+    }
+
     const createPollRes = await fetchJson(`${opts.apiBase}/api/polls`, {
       method: "POST",
       headers,
       body: JSON.stringify({
         title: "Automated Normal Concurrency Test Poll",
         theme: "default",
-        questions: [
-          {
-            text: "What is your favorite language?",
-            options: ["C#", "JavaScript", "Python", "Rust"]
-          }
-        ]
+        questions
       }),
     });
 
@@ -191,6 +198,8 @@ async function run() {
     "--mode", opts.mode,
     "--clients", String(opts.clients),
     "--apiBase", opts.apiBase,
+    "--actions", String(opts.actions),
+    "--actionDelay", String(opts.actionDelay),
   ];
   if (normalPollId) {
     perfArgs.push("--pollId", normalPollId);

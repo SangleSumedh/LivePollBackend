@@ -6,6 +6,8 @@ publish/
 *.suo
 .vs/
 
+docs/perf-test/repord.md
+docs/perf-test/node_modules/
 
 appsettings.Development.json
 

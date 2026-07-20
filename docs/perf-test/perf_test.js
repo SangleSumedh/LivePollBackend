@@ -78,17 +78,23 @@ function parseArgs() {
     biddingPollId: "",
     apiBase: CONFIG.API_BASE,
     clients: CONFIG.TOTAL_CLIENTS,
+    actions: CONFIG.ACTIONS_PER_CLIENT,
+    actionDelay: CONFIG.ACTION_DELAY_MS,
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--mode")           opts.mode           = args[++i];
     if (args[i] === "--pollId")         opts.pollId         = args[++i];
     if (args[i] === "--biddingPollId")  opts.biddingPollId  = args[++i];
     if (args[i] === "--apiBase")        opts.apiBase        = args[++i];
-    if (args[i] === "--clients")        opts.clients        = parseInt(args[++i]);
+    if (args[i] === "--clients")        opts.clients        = parseInt(args[++i], 10);
+    if (args[i] === "--actions")        opts.actions        = parseInt(args[++i], 10);
+    if (args[i] === "--actionDelay")    opts.actionDelay    = parseInt(args[++i], 10);
   }
   CONFIG.API_BASE = opts.apiBase;
   CONFIG.HUB_URL  = `${opts.apiBase}/hubs/poll`;
   if (opts.clients) CONFIG.TOTAL_CLIENTS = opts.clients;
+  if (opts.actions) CONFIG.ACTIONS_PER_CLIENT = opts.actions;
+  if (opts.actionDelay) CONFIG.ACTION_DELAY_MS = opts.actionDelay;
   return opts;
 }
 
