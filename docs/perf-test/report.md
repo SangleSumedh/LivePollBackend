@@ -1,12 +1,12 @@
 # 📊 LivePoll — Performance Test Report
 
-> **Generated:** 2026-07-20T08:01:32.163Z  
-> **Local Time:** 20/7/2026, 1:31:32 pm  
+> **Generated:** 2026-07-20T12:48:27.458Z  
+> **Local Time:** 20/7/2026, 6:18:27 pm  
 > **API Endpoint:** `http://127.0.0.1:5065`  
 > **Hub Endpoint:** `http://127.0.0.1:5065/hubs/poll`  
 > **Simulated Clients:** 1000  
 > **Connection Ramp-up:** 5000 ms  
-> **Actions per Client:** 3  
+> **Actions per Client:** 11  
 > **Test Mode:** normal
 
 ---
@@ -19,7 +19,7 @@
 | Transport | SignalR WebSocket |
 | Concurrent Clients | 1000 |
 | Ramp-up Window | 5000 ms |
-| Actions per Client | 3 |
+| Actions per Client | 11 |
 
 ---
 
@@ -30,23 +30,23 @@
 | Clients Connected | 1000 / 1000 |
 | Connection Failures | 0 |
 | Join Group Failures | 0 |
-| Votes Succeeded | 1000 / 1000 |
-| Total Test Duration | 16.30 s |
-| Votes/sec | 61.4 |
-| Connections/sec | 61.4 |
+| Votes Succeeded | 11000 / 11000 |
+| Total Test Duration | 82.54 s |
+| Votes/sec | 133.3 |
+| Connections/sec | 12.1 |
 
 ### Connection Establishment Time
 
 | Metric | Value |
 |--------|-------|
 | Samples | 1000 |
-| Min | 1.79 ms |
-| Max | 72.76 ms |
-| Mean | 10.65 ms |
-| Median (p50) | 6.04 ms |
-| p90 | 20.33 ms |
-| p95 | 21.36 ms |
-| p99 | 23.63 ms |
+| Min | 1.78 ms |
+| Max | 94.91 ms |
+| Mean | 10.25 ms |
+| Median (p50) | 6.06 ms |
+| p90 | 20.05 ms |
+| p95 | 21.05 ms |
+| p99 | 24.94 ms |
 
 
 ### JoinPollGroup Invocation Time
@@ -54,41 +54,41 @@
 | Metric | Value |
 |--------|-------|
 | Samples | 1000 |
-| Min | 58.86 ms |
-| Max | 126.73 ms |
-| Mean | 101.69 ms |
-| Median (p50) | 103.66 ms |
-| p90 | 119.63 ms |
-| p95 | 121.36 ms |
-| p99 | 122.40 ms |
+| Min | 171.98 ms |
+| Max | 1088.91 ms |
+| Mean | 620.69 ms |
+| Median (p50) | 965.26 ms |
+| p90 | 1025.65 ms |
+| p95 | 1029.25 ms |
+| p99 | 1032.28 ms |
 
 
 ### Vote REST API Response Time (`POST /api/polls/{id}/votes`)
 
 | Metric | Value |
 |--------|-------|
-| Samples | 1000 |
-| Min | 459.14 ms |
-| Max | 538.16 ms |
-| Mean | 502.54 ms |
-| Median (p50) | 501.19 ms |
-| p90 | 509.72 ms |
-| p95 | 512.09 ms |
-| p99 | 535.44 ms |
+| Samples | 11000 |
+| Min | 389.33 ms |
+| Max | 763.02 ms |
+| Mean | 464.75 ms |
+| Median (p50) | 443.61 ms |
+| p90 | 499.88 ms |
+| p95 | 653.53 ms |
+| p99 | 743.98 ms |
 
 
 ### Server → Client Broadcast Latency (`VoteCountsUpdated`)
 
 | Metric | Value |
 |--------|-------|
-| Samples | 4000 |
-| Min | 360.98 ms |
-| Max | 539.47 ms |
-| Mean | 424.55 ms |
-| Median (p50) | 393.61 ms |
-| p90 | 529.54 ms |
-| p95 | 534.64 ms |
-| p99 | 538.54 ms |
+| Samples | 18000 |
+| Min | 204.87 ms |
+| Max | 672.27 ms |
+| Mean | 470.68 ms |
+| Median (p50) | 459.21 ms |
+| p90 | 573.07 ms |
+| p95 | 652.90 ms |
+| p99 | 668.37 ms |
 
 
 ---
@@ -98,9 +98,9 @@
 | Mode | Check | Result | Value |
 |------|-------|--------|-------|
 | NORMAL | Connection Success Rate ≥ 95% | ✅ PASS | 100.0% |
-| NORMAL | p95 Connect Time < 2000ms | ✅ PASS | 21.36 ms |
-| NORMAL | p95 API Response Time < 1000ms | ✅ PASS | 512.09 ms |
-| NORMAL | p95 Broadcast Latency < 500ms | ❌ FAIL | 534.64 ms |
+| NORMAL | p95 Connect Time < 2000ms | ✅ PASS | 21.05 ms |
+| NORMAL | p95 API Response Time < 1000ms | ✅ PASS | 653.53 ms |
+| NORMAL | p95 Broadcast Latency < 500ms | ❌ FAIL | 652.9 ms |
 
 ---
 

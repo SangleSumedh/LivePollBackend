@@ -21,6 +21,7 @@ public interface IVoteStateTracker
     Task FlushToDatabaseAsync(string pollId);
     Task FlushAllPendingAsync();
     void ClearPoll(string pollId);
+    void InvalidateActivePollState(string pollId);
 }
 
 public class ActivePollState

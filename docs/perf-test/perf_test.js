@@ -153,9 +153,10 @@ function printSubHeader(title) {
 }
 
 async function fetchJson(url, options = {}) {
+  const { headers, ...rest } = options;
   const res = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...options.headers },
-    ...options,
+    headers: { "Content-Type": "application/json", ...headers },
+    ...rest,
   });
   const text = await res.text();
   let json = null;

@@ -136,14 +136,18 @@ public class VoteStateTracker : IVoteStateTracker, IDisposable
 
                 var question = await db.Questions
                     .FirstOrDefaultAsync(q => q.PollId == id && q.Index == poll.ActiveQuestionIndex);
-                if (question == null) return null;
+
+                // Return a state object even when no question is found.
+                // This lets callers distinguish "poll exists but not active"
+                // from "poll doesn't exist at all" (null return).
+                var questionType = question?.Type ?? QuestionType.MultipleChoice;
 
                 var state = new ActivePollState
                 {
                     PollId = id,
-                    IsActive = poll.CurrentQuestionActive,
+                    IsActive = poll.CurrentQuestionActive && question != null,
                     ActiveQuestionIndex = poll.ActiveQuestionIndex,
-                    QuestionType = question.Type,
+                    QuestionType = questionType,
                     Status = poll.Status.ToString().ToLower()
                 };
 
@@ -159,17 +163,27 @@ public class VoteStateTracker : IVoteStateTracker, IDisposable
         return await fetchTask;
     }
 
-    public Task<PollKind> GetPollKindAsync(string pollId)
+    public async Task<PollKind> GetPollKindAsync(string pollId)
     {
-        return _pollKindCache.GetOrAdd(pollId, _ => new Lazy<Task<PollKind>>(async () =>
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        // Check cache first — only positive results (Bidding/Normal) are cached
+        if (_pollKindCache.TryGetValue(pollId, out var cached))
+            return await cached.Value;
 
-            if (await db.BiddingPolls.AnyAsync(p => p.Id == pollId)) return PollKind.Bidding;
-            if (await db.Polls.AnyAsync(p => p.Id == pollId)) return PollKind.Normal;
-            return PollKind.NotFound;
-        })).Value;
+        // Query DB
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        PollKind result;
+        if (await db.BiddingPolls.AnyAsync(p => p.Id == pollId))
+            result = PollKind.Bidding;
+        else if (await db.Polls.AnyAsync(p => p.Id == pollId))
+            result = PollKind.Normal;
+        else
+            return PollKind.NotFound; // Don't cache NotFound — poll may be mid-creation
+
+        // Cache only Bidding/Normal results
+        _pollKindCache.TryAdd(pollId, new Lazy<Task<PollKind>>(() => Task.FromResult(result)));
+        return result;
     }
 
 
@@ -239,6 +253,11 @@ public class VoteStateTracker : IVoteStateTracker, IDisposable
         }
         _activePollCache.TryRemove(pollId, out _);
         _pollKindCache.TryRemove(pollId, out _);
+    }
+
+    public void InvalidateActivePollState(string pollId)
+    {
+        _activePollCache.TryRemove(pollId, out _);
     }
 
     private async Task FlushForQuestionAsync(string pollId, int questionIndex)

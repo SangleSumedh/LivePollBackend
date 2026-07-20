@@ -300,6 +300,7 @@ public class PollService : IPollService
         poll.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
+        _voteTracker.InvalidateActivePollState(pollId);
 
         await BroadcastToGroup(pollId, "PollUpdated", new { pollId, status = "live", activeQuestionIndex = poll.ActiveQuestionIndex, currentQuestionActive = true });
     }
@@ -316,6 +317,7 @@ public class PollService : IPollService
         poll.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
+        _voteTracker.InvalidateActivePollState(pollId);
 
         await BroadcastToGroup(pollId, "PollUpdated", new { pollId, currentQuestionActive = false });
     }
@@ -333,6 +335,7 @@ public class PollService : IPollService
         poll.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
+        _voteTracker.InvalidateActivePollState(pollId);
 
         await BroadcastToGroup(pollId, "PollUpdated", new { pollId, activeQuestionIndex = poll.ActiveQuestionIndex, currentQuestionActive = false });
     }
@@ -350,6 +353,7 @@ public class PollService : IPollService
         poll.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
+        _voteTracker.InvalidateActivePollState(pollId);
 
         await BroadcastToGroup(pollId, "PollUpdated", new { pollId, activeQuestionIndex = poll.ActiveQuestionIndex, currentQuestionActive = false });
     }
@@ -367,6 +371,7 @@ public class PollService : IPollService
         poll.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
+        _voteTracker.InvalidateActivePollState(pollId);
 
         await BroadcastToGroup(pollId, "PollEnded", new { pollId });
     }

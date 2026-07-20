@@ -39,7 +39,7 @@ public class VoteService : IVoteService
         if (state == null)
             throw new NotFoundException($"Poll '{pollId}' not found");
 
-        if (!state.IsActive)
+        if (!state.IsActive || state.ActiveQuestionIndex < 0)
             throw new InvalidOperationException("Voting is not currently active on this question");
 
         if (request.QuestionIndex != state.ActiveQuestionIndex)
