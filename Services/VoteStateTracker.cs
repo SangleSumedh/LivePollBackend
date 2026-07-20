@@ -45,8 +45,8 @@ public class VoteStateTracker : IVoteStateTracker, IDisposable
         _hubContext = hubContext;
         _scopeFactory = scopeFactory;
 
-        // 100ms debounce timer for SignalR broadcast
-        _broadcastTimer = new System.Timers.Timer(100);
+        // 250ms debounce timer for SignalR broadcast
+        _broadcastTimer = new System.Timers.Timer(250);
         _broadcastTimer.Elapsed += OnBroadcastTimerElapsed;
         _broadcastTimer.AutoReset = true;
         _broadcastTimer.Start();
