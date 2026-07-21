@@ -140,12 +140,17 @@ public class VoteStateTracker : IVoteStateTracker, IDisposable
                 // Return a state object even when no question is found.
                 // This lets callers distinguish "poll exists but not active"
                 // from "poll doesn't exist at all" (null return).
+                // NOTE: Do NOT add `&& question != null` to IsActive — if the question
+                // lookup returns null due to an index mismatch or transient DB issue, it
+                // would silently block all votes even when the presenter has opened voting.
+                // The VoteService already guards against wrong/missing questions via
+                // `state.ActiveQuestionIndex < 0` and `request.QuestionIndex != state.ActiveQuestionIndex`.
                 var questionType = question?.Type ?? QuestionType.MultipleChoice;
 
                 var state = new ActivePollState
                 {
                     PollId = id,
-                    IsActive = poll.CurrentQuestionActive && question != null,
+                    IsActive = poll.CurrentQuestionActive,
                     ActiveQuestionIndex = poll.ActiveQuestionIndex,
                     QuestionType = questionType,
                     Status = poll.Status.ToString().ToLower()
