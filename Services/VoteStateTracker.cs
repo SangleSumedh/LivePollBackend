@@ -262,7 +262,12 @@ public class VoteStateTracker : IVoteStateTracker, IDisposable
 
     public void InvalidateActivePollState(string pollId)
     {
+        // Clear both the cached result AND any in-flight fetch task.
+        // Without clearing _activePollQueries, a fetch that started just before
+        // StartVotingAsync set CurrentQuestionActive=true could complete afterwards
+        // and write IsActive=false back into the cache, blocking voters for up to 1s.
         _activePollCache.TryRemove(pollId, out _);
+        _activePollQueries.TryRemove(pollId, out _);
     }
 
     private async Task FlushForQuestionAsync(string pollId, int questionIndex)
