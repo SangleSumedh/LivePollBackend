@@ -29,6 +29,7 @@ public class VoteStateTracker : IVoteStateTracker, IDisposable
     // Cache of active poll states
     private readonly ConcurrentDictionary<string, (ActivePollState State, DateTime ExpiresAt)> _activePollCache = new();
     private readonly ConcurrentDictionary<string, Task<ActivePollState?>> _activePollQueries = new();
+    private readonly ConcurrentDictionary<string, long> _pollStateVersions = new();
 
     // Tracks if existing votes for a question have been loaded from DB
     private readonly ConcurrentDictionary<(string PollId, int QuestionIndex), bool> _questionVotesLoaded = new();
@@ -124,6 +125,8 @@ public class VoteStateTracker : IVoteStateTracker, IDisposable
             return cached.State;
         }
 
+        var captureVersion = _pollStateVersions.GetOrAdd(pollId, 0);
+
         // Deduplicate concurrent database fetches
         var fetchTask = _activePollQueries.GetOrAdd(pollId, async id =>
         {
@@ -156,7 +159,11 @@ public class VoteStateTracker : IVoteStateTracker, IDisposable
                     Status = poll.Status.ToString().ToLower()
                 };
 
-                _activePollCache[id] = (state, DateTime.UtcNow.AddSeconds(1));
+                var currentVersion = _pollStateVersions.GetOrAdd(id, 0);
+                if (currentVersion == captureVersion)
+                {
+                    _activePollCache[id] = (state, DateTime.UtcNow.AddSeconds(1));
+                }
                 return state;
             }
             finally
@@ -268,6 +275,7 @@ public class VoteStateTracker : IVoteStateTracker, IDisposable
         // and write IsActive=false back into the cache, blocking voters for up to 1s.
         _activePollCache.TryRemove(pollId, out _);
         _activePollQueries.TryRemove(pollId, out _);
+        _pollStateVersions.AddOrUpdate(pollId, 1, (_, v) => v + 1);
     }
 
     private async Task FlushForQuestionAsync(string pollId, int questionIndex)
